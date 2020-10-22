@@ -113,9 +113,11 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     if(status == DeserializationError::Ok){
       if( !strncmp(dataType, DATATYPE_BOOLEAN, strlen(DATATYPE_BOOLEAN)) ) {
         sendDataToServerOutput(booleanServerOutput);
+        Serial.println(booleanServerOutput);
         request->send(HTTP_STATUS_OK);
       } else if( !strncmp(dataType, DATATYPE_NUMBER, strlen(DATATYPE_NUMBER)) ) {
         sendDataToServerOutput(numberServerOutput);
+        Serial.println(numberServerOutput);
         request->send(HTTP_STATUS_OK);
       } else {
         request->send(HTTP_STATUS_BAD_REQUEST);
@@ -125,8 +127,6 @@ void HTTPSetMappings(AsyncWebServer& webServer){
       request->send(HTTP_STATUS_INTERNAL_SERVER_ERROR);
     }
   });
-/*  Serial.println(booleanServerOutput);
-  Serial.println(numberServerOutput);*/
 }
 
 
@@ -165,8 +165,6 @@ void setup(){
 
 
 void loop(){
-  uint32_t actualTime = millis();
-  uint32_t previousTime = 0;
 
 }
 
