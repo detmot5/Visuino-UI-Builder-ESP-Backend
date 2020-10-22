@@ -33,12 +33,61 @@ const char* DATATYPE_NUMBER = "number";
 
 
 
-String serverInput;
+String serverInputFromVisuino;
+
+String serverInputFromWebsite;
+
 String booleanServerOutput;
 String numberServerOutput;
 
 StaticJsonDocument<JSON_FROM_WEBSITE_SIZE> jsonFromWebsite;
 
+
+
+const char* testWebsiteConfigStr = {R"(
+{
+  "title" : "Cokolwiek",
+  "elements" : [
+    {
+      "name" : "Led1",
+      "type" : "boolean",
+      "value": "false"
+    },
+
+    {
+      "name" : "Led2",
+      "type" : "boolean",
+      "value": "true"
+    },
+
+    {
+      "name" : "Led3",
+      "type" : "boolean",
+      "value": "false"
+    },
+
+    {
+      "name" : "Led4",
+      "type" : "boolean",
+      "value": "true"
+    },
+
+    {
+      "name" : "Led6",
+      "type" : "boolean",
+      "value": "true"
+    },
+
+    {
+      "name" : "temperature1",
+      "type" : "number",
+      "value" : "62.5"
+    }
+  ]
+})"};
+
+
+StaticJsonDocument<1024> testWebsiteConfig;
 
 
 
@@ -52,11 +101,27 @@ void fullCorsAllow(AsyncWebServerResponse* response){
 
 void sendDataToServerOutput(String& serverOutput){
   StaticJsonDocument<JSON_FROM_WEBSITE_SIZE> tmpJson;
+  JsonObject obj = jsonFromWebsite.as<JsonObject>();
+  tmpJson.clear();
   serverOutput.clear();
-  const char* name = jsonFromWebsite["name"];
-  const char* value = jsonFromWebsite["value"];
-  tmpJson["name"] = name;
-  tmpJson["value"] = value;
+
+  tmpJson["name"] = obj["name"];
+  tmpJson["value"] = obj["value"];
+
+
+
+  String name = obj["name"];
+  String elName;
+  JsonArray arr = testWebsiteConfig["elements"].as<JsonArray>();
+  for(auto el : arr){
+    elName = el["name"].as<String>();
+    if(elName.equals(name)){
+      el["value"] = obj["value"];
+    }
+  }
+
+
+
   serializeJson(tmpJson, serverOutput);
 }
 
@@ -75,12 +140,24 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
     request->send(SPIFFS, "/ValueDisplay.css","text/css");
   });
 
+  webServer.on("/numberInput.css", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "/numberInput.css","text/css");
+  });
+
   webServer.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/index.js","application/javascript");
   });
 
   webServer.on("/ValueDisplay.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/ValueDisplay.js","application/javascript");
+  });
+
+  webServer.on("/numberInput.js", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "/numberInput.js","application/javascript");
+  });
+
+  webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "/renderer.js","application/javascript");
   });
 
   webServer.on("/Assets/bulbOn.svg", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -90,6 +167,10 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
   webServer.on("/Assets/bulbOff.svg", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Assets/bulbOff.svg","image/svg+xml");
   });
+
+  webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "/favicon.ico","image/ico");
+  });
 }
 
 void HTTPSetMappings(AsyncWebServer& webServer){
@@ -98,14 +179,16 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK);
   });
 
-  webServer.on("/status", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, serverInput, "application/json");
+  webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
+    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", testWebsiteConfig.as<String>());
     fullCorsAllow(response);
     request->send(response);
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total){
+
+    jsonFromWebsite.clear();
     DeserializationError status;
     status = deserializeJson(jsonFromWebsite, reinterpret_cast<const char*>(data), len);
     const char* dataType = jsonFromWebsite["type"];
@@ -113,11 +196,11 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     if(status == DeserializationError::Ok){
       if( !strncmp(dataType, DATATYPE_BOOLEAN, strlen(DATATYPE_BOOLEAN)) ) {
         sendDataToServerOutput(booleanServerOutput);
-        Serial.println(booleanServerOutput);
+        //Serial.println(booleanServerOutput);
         request->send(HTTP_STATUS_OK);
       } else if( !strncmp(dataType, DATATYPE_NUMBER, strlen(DATATYPE_NUMBER)) ) {
         sendDataToServerOutput(numberServerOutput);
-        Serial.println(numberServerOutput);
+        //Serial.println(numberServerOutput);
         request->send(HTTP_STATUS_OK);
       } else {
         request->send(HTTP_STATUS_BAD_REQUEST);
@@ -149,13 +232,12 @@ void setup(){
   if(!SPIFFS.exists("/index.html")){
     Serial.println("index.html not found");
   }
-
     // reserve memory in string to prevent many reallocations
-  booleanServerOutput.reserve(200);
-  numberServerOutput.reserve(200);
-  serverInput.reserve(1024);
+  booleanServerOutput.reserve(256);
+  numberServerOutput.reserve(256);
+  serverInputFromWebsite.reserve(1024);
 
-
+  deserializeJson(testWebsiteConfig, testWebsiteConfigStr);
   WiFiInit();
 
 
