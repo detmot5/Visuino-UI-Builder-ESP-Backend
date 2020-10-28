@@ -2,8 +2,8 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
+#include <vector>
 #include <ArduinoJson.h>
-
 
 #define JSON_FROM_WEBSITE_SIZE 256
 
@@ -29,24 +29,77 @@ const char* DATATYPE_BOOLEAN = "boolean";
 const char* DATATYPE_NUMBER = "number";
 
 
-
-
-
-
-String serverInputFromVisuino;
-
-String serverInputFromWebsite;
-
 String booleanServerOutput;
 String numberServerOutput;
 
-StaticJsonDocument<JSON_FROM_WEBSITE_SIZE> jsonFromWebsite;
+
+class WebsiteComponent {
+public:
+  static int actualID;
+  WebsiteComponent(const JsonObject& inputObject){
+    this->id = actualID;
+    actualID++;
+    initializedOK = true;
+    if(inputObject.containsKey("posX")) {
+      this->posX = inputObject["posX"];
+    } else initializedOK = false;
+    if(inputObject.containsKey("posY")){
+      this->posY = inputObject["posY"];
+    } else initializedOK = false;
+    if(inputObject.containsKey("readonly")){
+      this->readOnly = inputObject["readonly"];
+    } else initializedOK = false;
+    if(inputObject.containsKey("dataType")){
+      this->dataType = inputObject["dataType"].as<String>();
+    } else initializedOK = false;
+  }
+
+
+  virtual JsonObject toJsonOutput() = 0;
+
+protected:
+  bool initializedOK;
+  uint16_t id;
+  uint16_t posX;
+  uint16_t posY;
+  bool readOnly;
+  String dataType;
+};
+
+int WebsiteComponent::actualID = 0;
 
 
 
-const char* testWebsiteConfigStr = {R"(
+class Button : private WebsiteComponent {
+public:
+  Button(const JsonObject &inputObject) : WebsiteComponent(inputObject) {
+    if(inputObject.containsKey("value")){
+      this->value = inputObject["value"];
+    } else initializedOK = false;
+    if(inputObject.containsKey("color")){
+      this->color = inputObject["color"].as<String>();
+    } else initializedOK = false;
+  }
+
+
+  JsonObject toJsonOutput() override {
+
+  }
+
+  void setValue(bool newValue) {this->value = newValue;}
+  bool getValue() const {return this->value;}
+private:
+  bool value;
+  String color;
+};
+
+
+std::vector<WebsiteComponent*> components;
+
+
+const String testWebsiteConfigStr = {R"(
 {
-  "title" : "Cokolwiek",
+  "title" : "Nice website",
   "elements" : [
     {
       "name" : "Led1",
@@ -92,39 +145,35 @@ StaticJsonDocument<1024> testWebsiteConfig;
 
 
 
+
+
+
+enum class InputJsonStatus : uint8_t {OK, TITLE_NOT_FOUND, ELEMENTS_NOT_FOUND};
+InputJsonStatus readWebsiteComponentsFromJson(const String& json){
+  DynamicJsonDocument jsonDocument( JSON_OBJECT_SIZE(json.length() ) );
+  deserializeJson(jsonDocument, json);
+  JsonObject inputObject = jsonDocument.as<JsonObject>();
+  if(!inputObject.containsKey("title")) return InputJsonStatus::TITLE_NOT_FOUND;
+  if(!inputObject.containsKey("elements")) return InputJsonStatus::ELEMENTS_NOT_FOUND;
+
+  JsonArray elements = inputObject["elements"].as<JsonArray>();
+
+  components.reserve(elements.size());
+
+  for(const JsonObject element : elements){
+    serializeJsonPretty(element,Serial);
+    components.push_back(new InputComponent(element));
+  }
+
+  return InputJsonStatus::OK;
+}
+
+
 void fullCorsAllow(AsyncWebServerResponse* response){
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS, CORS_ALLOWED_METHODS);
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS, CORS_ALLOWED_HEADERS);
 }
-
-
-void sendDataToServerOutput(String& serverOutput){
-  StaticJsonDocument<JSON_FROM_WEBSITE_SIZE> tmpJson;
-  JsonObject obj = jsonFromWebsite.as<JsonObject>();
-  tmpJson.clear();
-  serverOutput.clear();
-
-  tmpJson["name"] = obj["name"];
-  tmpJson["value"] = obj["value"];
-
-
-
-  String name = obj["name"];
-  String elName;
-  JsonArray arr = testWebsiteConfig["elements"].as<JsonArray>();
-  for(auto el : arr){
-    elName = el["name"].as<String>();
-    if(elName.equals(name)){
-      el["value"] = obj["value"];
-    }
-  }
-
-
-
-  serializeJson(tmpJson, serverOutput);
-}
-
 
 void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
 
@@ -180,35 +229,13 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   });
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", testWebsiteConfig.as<String>());
-    fullCorsAllow(response);
-    request->send(response);
+
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
-          [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total){
+          [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
 
-    jsonFromWebsite.clear();
-    DeserializationError status;
-    status = deserializeJson(jsonFromWebsite, reinterpret_cast<const char*>(data), len);
-    const char* dataType = jsonFromWebsite["type"];
 
-    if(status == DeserializationError::Ok){
-      if( !strncmp(dataType, DATATYPE_BOOLEAN, strlen(DATATYPE_BOOLEAN)) ) {
-        sendDataToServerOutput(booleanServerOutput);
-        //Serial.println(booleanServerOutput);
-        request->send(HTTP_STATUS_OK);
-      } else if( !strncmp(dataType, DATATYPE_NUMBER, strlen(DATATYPE_NUMBER)) ) {
-        sendDataToServerOutput(numberServerOutput);
-        //Serial.println(numberServerOutput);
-        request->send(HTTP_STATUS_OK);
-      } else {
-        request->send(HTTP_STATUS_BAD_REQUEST);
-      }
-    } else {
-      // some error handling
-      request->send(HTTP_STATUS_INTERNAL_SERVER_ERROR);
-    }
   });
 }
 
@@ -222,6 +249,10 @@ void WiFiInit(){
   HTTPSendWebsiteFiles(server);
   HTTPSetMappings(server);
   server.begin();
+
+
+
+
 }
 
 void setup(){
@@ -229,18 +260,14 @@ void setup(){
   if(!SPIFFS.begin()){
     Serial.println("An Error has occurred while mounting SPIFFS");
   }
-  if(!SPIFFS.exists("/index.html")){
+  if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-    // reserve memory in string to prevent many reallocations
-  booleanServerOutput.reserve(256);
-  numberServerOutput.reserve(256);
-  serverInputFromWebsite.reserve(1024);
-
-  deserializeJson(testWebsiteConfig, testWebsiteConfigStr);
   WiFiInit();
 
 
+  InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
+  if(status != InputJsonStatus::OK) Serial.println("Some error xd");
 
 }
 
