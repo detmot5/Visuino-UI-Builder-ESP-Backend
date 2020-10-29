@@ -2,9 +2,9 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
-#include <vector>
 #include <ArduinoJson.h>
-
+#include <vector>
+#include <memory>
 #define JSON_FROM_WEBSITE_SIZE 256
 
 #define CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN  "Access-Control-Allow-Origin"
@@ -13,7 +13,6 @@
 
 #define CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
 #define CORS_ALLOWED_HEADERS "Origin, X-Requested-With, Content-Type, Accept"
-
 
 
 #define HTTP_STATUS_OK 200
@@ -32,58 +31,101 @@ const char* DATATYPE_NUMBER = "number";
 String booleanServerOutput;
 String numberServerOutput;
 
+namespace ComponentType {
+  namespace Input {
+    const char* Switch PROGMEM = "switch";
+    const char* Slider PROGMEM = "slider";
+    const char* CheckBox PROGMEM = "checkbox";
+    const char* NumberInput PROGMEM = "numberinput";
+  }
+  namespace Output {
+    const char* Label PROGMEM = "label";
+    const char* Chart PROGMEM = "chart";
+    const char* Indicator PROGMEM = "indicator";
+    const char* Gauge PROGMEM = "gauge";
+  }
+}
+
+namespace JsonKey {
+  const char* Title PROGMEM = "title";
+  const char* Elements PROGMEM = "elements";
+
+    // output properties
+  const char* Name PROGMEM = "name";
+  const char* PosX PROGMEM = "posX";
+  const char* PosY PROGMEM = "posY";
+  const char* ReadOnly PROGMEM = "readonly";
+  const char* DataType PROGMEM = "datatype";
+  const char* Value PROGMEM = "value";
+  const char* Color PROGMEM = "color";
+}
+
+namespace DataType{
+  const char* Boolean PROGMEM = "boolean";
+  const char* Number PROGMEM = "number";
+}
+
 
 class WebsiteComponent {
 public:
-  static int actualID;
-  WebsiteComponent(const JsonObject& inputObject){
-    this->id = actualID;
-    actualID++;
+  explicit WebsiteComponent(const JsonObject& inputObject){
     initializedOK = true;
-    if(inputObject.containsKey("posX")) {
-      this->posX = inputObject["posX"];
+    if(inputObject.containsKey(JsonKey::Name)){
+      this->name = inputObject[JsonKey::Name].as<String>();
     } else initializedOK = false;
-    if(inputObject.containsKey("posY")){
-      this->posY = inputObject["posY"];
+    if(inputObject.containsKey(JsonKey::PosX)) {
+      this->posX = inputObject[JsonKey::PosX];
     } else initializedOK = false;
-    if(inputObject.containsKey("readonly")){
-      this->readOnly = inputObject["readonly"];
+    if(inputObject.containsKey(JsonKey::PosY)){
+      this->posY = inputObject[JsonKey::PosY];
     } else initializedOK = false;
-    if(inputObject.containsKey("dataType")){
-      this->dataType = inputObject["dataType"].as<String>();
+    if(inputObject.containsKey(JsonKey::ReadOnly)){
+      this->readOnly = inputObject[JsonKey::ReadOnly];
+    } else initializedOK = false;
+    if(inputObject.containsKey(JsonKey::DataType)){
+      this->dataType = inputObject[JsonKey::DataType].as<String>();
     } else initializedOK = false;
   }
-
-
-  virtual JsonObject toJsonOutput() = 0;
-
+  virtual ~WebsiteComponent() = default;
+  virtual JsonObject toOutputJson() = 0;
+  bool isInitializedOK() const {return initializedOK;}
 protected:
+  static DynamicJsonDocument jsonMemory;
   bool initializedOK;
-  uint16_t id;
   uint16_t posX;
   uint16_t posY;
   bool readOnly;
+  String name;
   String dataType;
 };
 
-int WebsiteComponent::actualID = 0;
+DynamicJsonDocument WebsiteComponent::jsonMemory(512);
 
 
 
-class Button : private WebsiteComponent {
+class Switch : public WebsiteComponent {
 public:
-  Button(const JsonObject &inputObject) : WebsiteComponent(inputObject) {
-    if(inputObject.containsKey("value")){
-      this->value = inputObject["value"];
+  explicit Switch(const JsonObject& inputObject)
+          : WebsiteComponent(inputObject){
+
+    if(inputObject.containsKey(JsonKey::Value)){
+      this->value = inputObject[JsonKey::Value];
     } else initializedOK = false;
-    if(inputObject.containsKey("color")){
-      this->color = inputObject["color"].as<String>();
+    if(inputObject.containsKey(JsonKey::Color)){
+      this->color = inputObject[JsonKey::Color].as<String>();
     } else initializedOK = false;
   }
 
 
-  JsonObject toJsonOutput() override {
+  JsonObject toOutputJson() override {
+    jsonMemory.clear();
+    JsonObject outputObj = jsonMemory.as<JsonObject>();
 
+    outputObj[JsonKey::Name] = this->name;
+    outputObj[JsonKey::DataType] = this->dataType;
+    outputObj[JsonKey::Value] = this->value;
+
+    return outputObj;
   }
 
   void setValue(bool newValue) {this->value = newValue;}
@@ -140,33 +182,39 @@ const String testWebsiteConfigStr = {R"(
 })"};
 
 
-StaticJsonDocument<1024> testWebsiteConfig;
+inline void componentsGarbageCollect(){
+  for (auto component : components) delete component;
+}
 
 
 
-
-
-
-
-enum class InputJsonStatus : uint8_t {OK, TITLE_NOT_FOUND, ELEMENTS_NOT_FOUND};
+enum class InputJsonStatus : uint8_t {OK, TITLE_NOT_FOUND, ELEMENTS_NOT_FOUND, OBJECT_NOT_VALID};
 InputJsonStatus readWebsiteComponentsFromJson(const String& json){
-  DynamicJsonDocument jsonDocument( JSON_OBJECT_SIZE(json.length() ) );
+  static DynamicJsonDocument jsonDocument( JSON_OBJECT_SIZE(json.length() ) ); // static for allocate memory once
+  static bool isVectorReserved = false;
   deserializeJson(jsonDocument, json);
   JsonObject inputObject = jsonDocument.as<JsonObject>();
-  if(!inputObject.containsKey("title")) return InputJsonStatus::TITLE_NOT_FOUND;
-  if(!inputObject.containsKey("elements")) return InputJsonStatus::ELEMENTS_NOT_FOUND;
+  if(!inputObject.containsKey(JsonKey::Title)) return InputJsonStatus::TITLE_NOT_FOUND;
+  if(!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
 
-  JsonArray elements = inputObject["elements"].as<JsonArray>();
+  JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
 
-  components.reserve(elements.size());
+  if( !isVectorReserved ) {
+    components.reserve(elements.size());
+    isVectorReserved = true;
+  }
 
+  WebsiteComponent* componentPtr;
   for(const JsonObject element : elements){
     serializeJsonPretty(element,Serial);
-    components.push_back(new InputComponent(element));
+    componentPtr = new Switch(element);
+    if( !componentPtr->isInitializedOK() ) return InputJsonStatus::OBJECT_NOT_VALID;
+    components.push_back(componentPtr);
   }
 
   return InputJsonStatus::OK;
 }
+
 
 
 void fullCorsAllow(AsyncWebServerResponse* response){
