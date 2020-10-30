@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include <vector>
 #include <string>
+
 #define OUTPUT_JSON_INITIAL_SIZE 512
 
 #define CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN  "Access-Control-Allow-Origin"
@@ -49,8 +50,8 @@ namespace ComponentType {
   }
   namespace Output {
     const char* Label PROGMEM = "label";
-    const char* Chart PROGMEM = "chart";
     const char* Indicator PROGMEM = "indicator";
+    const char* Chart PROGMEM = "chart";
     const char* Gauge PROGMEM = "gauge";
   }
 }
@@ -68,8 +69,7 @@ namespace JsonKey {
   const char* Name PROGMEM = "name";
   const char* PosX PROGMEM = "posX";
   const char* PosY PROGMEM = "posY";
-  const char* ReadOnly PROGMEM = "readonly";
-  const char* DataType PROGMEM = "datatype";
+  const char* DataType PROGMEM = "dataType";
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
 }
@@ -80,7 +80,13 @@ class WebsiteComponent {
 public:
   explicit WebsiteComponent(const JsonObject& inputObject);
   virtual ~WebsiteComponent() = default;
+
+    // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
+    // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
+    // ** YOU CANNOT USE IT TO COMPARE TWO OBJECTS **
+    // ** ONLY TO SENDING OR DISPLAYING IT
   virtual JsonObject toOutputJson() = 0;
+
   bool isInitializedOK() const {return initializedOK;}
 protected:
   static DynamicJsonDocument jsonMemory;
@@ -97,18 +103,29 @@ WebsiteComponent::WebsiteComponent(const JsonObject& inputObject){
   initializedOK = true;
   if(inputObject.containsKey(JsonKey::Name)){
     this->name = inputObject[JsonKey::Name].as<String>();
-  } else initializedOK = false;
+  } else {
+    Serial.println("Name not found");
+    initializedOK = false;
+  }
   if(inputObject.containsKey(JsonKey::PosX)) {
     this->posX = inputObject[JsonKey::PosX];
-  } else initializedOK = false;
+  } else {
+    Serial.println("PosX not found");
+    initializedOK = false;
+  }
   if(inputObject.containsKey(JsonKey::PosY)){
     this->posY = inputObject[JsonKey::PosY];
-  } else initializedOK = false;
+  } else {
+    Serial.println("POSY not found");
+    initializedOK = false;
+  }
   if(inputObject.containsKey(JsonKey::DataType)){
     this->dataType = inputObject[JsonKey::DataType].as<String>();
-  } else initializedOK = false;
+  } else {
+    Serial.println("DataType not found");
+    initializedOK = false;
+  }
 }
-
 
 
 
@@ -119,15 +136,20 @@ public:
 
     if(inputObject.containsKey(JsonKey::Value)){
       this->value = inputObject[JsonKey::Value];
-    } else initializedOK = false;
+    } else {
+      Serial.println("Value not found");
+      initializedOK = false;
+    }
     if(inputObject.containsKey(JsonKey::Color)){
       this->color = inputObject[JsonKey::Color].as<String>();
-    } else initializedOK = false;
+    } else {
+      Serial.println("Color not found");
+      initializedOK = false;
+    }
   }
 
   JsonObject toOutputJson() override {
-    jsonMemory.clear();
-    JsonObject outputObj = jsonMemory.as<JsonObject>();
+    JsonObject outputObj = jsonMemory.to<JsonObject>();
     outputObj[JsonKey::Name] = this->name;
     outputObj[JsonKey::DataType] = this->dataType;
     outputObj[JsonKey::Value] = this->value;
@@ -150,33 +172,48 @@ const String testWebsiteConfigStr = {R"(
     {
       "name" : "Lamp2",
       "dataType" : "boolean",
-      "componentType" : "switch";
+      "componentType" : "switch",
       "posX" : 20,
       "posY" : 40,
       "color" : "#ffeefe",
       "value": false
-    },
+    }
   ]
 })"};
 
 
-inline void componentsGarbageCollect(){
-  for (auto component : components) delete component;
+
+namespace DataValidation{
+
 }
 
+
+
 namespace JsonReader {
-  enum class InputJsonStatus : uint8_t {OK, TITLE_NOT_FOUND, ELEMENTS_NOT_FOUND, OBJECT_NOT_VALID, NAME_NOT_FOUND};
+  size_t documentSize = 0;
+  DynamicJsonDocument* inputData = nullptr;
+
+  enum class InputJsonStatus : uint8_t {
+    OK,
+    TITLE_NOT_FOUND,
+    ELEMENTS_NOT_FOUND,
+    OBJECT_NOT_VALID,
+    NAME_NOT_FOUND
+  };
+
 
   InputJsonStatus createComponent(JsonObject object, std::vector<WebsiteComponent*>& elements) {
-    if( !object.containsKey(JsonKey::DataType) ) return InputJsonStatus::NAME_NOT_FOUND;
+    if( !object.containsKey(JsonKey::Name) ) return InputJsonStatus::NAME_NOT_FOUND;
   }
 
 
+
   InputJsonStatus readWebsiteComponentsFromJson(const String& json){
-    static DynamicJsonDocument jsonDocument( JSON_OBJECT_SIZE(json.length() ) ); // static for allocate memory once
+    if(inputData == nullptr)
+      inputData = new DynamicJsonDocument (JSON_OBJECT_SIZE(json.length()));
     static bool isVectorReserved = false;
-    deserializeJson(jsonDocument, json);
-    JsonObject inputObject = jsonDocument.as<JsonObject>();
+    deserializeJson(*inputData, json);
+    JsonObject inputObject = inputData->as<JsonObject>();
     if(!inputObject.containsKey(JsonKey::Title)) return InputJsonStatus::TITLE_NOT_FOUND;
     if(!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
 
@@ -189,15 +226,15 @@ namespace JsonReader {
 
     WebsiteComponent* componentPtr;
     for(const JsonObject element : elements){
-      serializeJsonPretty(element,Serial);
       componentPtr = new Switch(element);
-      if( !componentPtr->isInitializedOK() ) {
+      if(componentPtr->isInitializedOK()) components.push_back(componentPtr);
+      else {
+        serializeJsonPretty(element, Serial);
+        Serial.println("error");
         delete componentPtr;
-        return InputJsonStatus::OBJECT_NOT_VALID;
+        break;
       }
-      components.push_back(componentPtr);
     }
-
     return InputJsonStatus::OK;
   }
   void inputJsonParse_ErrorHandler(InputJsonStatus status){
@@ -215,6 +252,13 @@ namespace JsonReader {
     }
   }
 }
+
+inline void componentsGarbageCollect(){
+  for (auto component : components) delete component;
+  delete JsonReader::inputData;
+}
+
+
 
 
 
@@ -279,8 +323,11 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK);
   });
 
-  webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
 
+  webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
+    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", JsonReader::inputData->as<String>());
+    fullCorsAllow(response);
+    request->send(response);
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
@@ -301,9 +348,6 @@ void WiFiInit(){
   HTTPSetMappings(server);
   server.begin();
 
-
-
-
 }
 
 void setup(){
@@ -319,6 +363,14 @@ void setup(){
 
   JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
   if(status != JsonReader::InputJsonStatus::OK) Serial.println("Some error xd");
+
+  if(!components.empty()){
+    JsonObject obj = components[0]->toOutputJson();
+    Serial.println("Created");
+    serializeJsonPretty(obj, Serial);
+  } else {
+    Serial.println("Json not initializated");
+  }
 
 }
 
