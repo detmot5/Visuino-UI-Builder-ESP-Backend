@@ -353,18 +353,18 @@ const String testWebsiteConfigStr = {R"(
       "height" : 11,
       "componentType" : "switch",
       "posX" : 200,
-      "posY" : 321,
+      "posY" : 300,
       "color" : "#abcada",
       "value": true
     },
     {
       "name" : "LightBulb",
       "dataType" : "boolean",
-      "width" : 32,
+      "width" : 1,
       "height" : 29,
       "componentType" : "switch",
-      "posX" : 232,
-      "posY" : 321,
+      "posX" : 100,
+      "posY" : 350,
       "color" : "#abcgdb",
       "value": true
     }
@@ -463,8 +463,8 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
     request->send(SPIFFS, "/index.css","text/css");
   });
 
-  webServer.on("/ValueDisplay.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/ValueDisplay.css","text/css");
+  webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/component.css","text/css");
   });
 
   webServer.on("/numberInput.css", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -475,8 +475,8 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
     request->send(SPIFFS, "/index.js","application/javascript");
   });
 
-  webServer.on("/ValueDisplay.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/ValueDisplay.js","application/javascript");
+  webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/component.js","application/javascript");
   });
 
   webServer.on("/numberInput.js", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -485,14 +485,6 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
 
   webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
       request->send(SPIFFS, "/renderer.js","application/javascript");
-  });
-
-  webServer.on("/Assets/bulbOn.svg", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Assets/bulbOn.svg","image/svg+xml");
-  });
-
-  webServer.on("/Assets/bulbOff.svg", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Assets/bulbOff.svg","image/svg+xml");
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -515,6 +507,13 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
+
+    for(size_t i = 0; i < len; i++){
+            Serial.print(static_cast<char>(data[i]));
+    }
+    Serial.println();
+
+    request->send(HTTP_STATUS_OK);
   });
 }
 
