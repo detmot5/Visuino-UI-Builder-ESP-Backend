@@ -312,22 +312,41 @@ namespace Website {
 
 
 
-namespace Log{
+namespace Log {
 
-  const char* infoHeader = "Server Info: ";
-  const char* errorHeader = "Server Error: ";
+  const char* infoHeader PROGMEM = "Server Info: ";
+  const char* errorHeader PROGMEM = "Server Error: ";
+
+  const char* memStats PROGMEM = "Memory stats: ";
+  const char* heapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
+  const char* freeHeapMsg PROGMEM = "- Free heap: ";
+  const char* maxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
+
+  void memoryInfo(Stream& stream){
+    Serial.println(memStats);
+    stream.print(heapFragmentationMsg);
+    stream.println(ESP.getHeapFragmentation());
+
+    stream.print(freeHeapMsg);
+    stream.println(ESP.getFreeHeap());
+
+    stream.print(maxFreeHeapBlock);
+    stream.println(ESP.getMaxFreeBlockSize());
+  }
 
   void info (const char* msg, Stream& stream) {
     stream.print(infoHeader);
-
     stream.print(msg);
   }
 
   void error (const char* msg, Stream& stream) {
-
+    stream.print(errorHeader);
+    stream.println(msg);
+    memoryInfo(stream);
   }
 }
 
+const String wrongWebsiteStr = {R"(gugugwno)"};
 
 const String testWebsiteConfigStr = {R"(
 {
@@ -412,6 +431,7 @@ namespace JsonReader {
   enum class InputJsonStatus : uint8_t {
     OK,
     JSON_OVERFLOW,
+    INVALID_INPUT,
     ALLOC_ERROR,
     TITLE_NOT_FOUND,
     ELEMENTS_NOT_FOUND,
@@ -423,7 +443,7 @@ namespace JsonReader {
 
 
   bool validateJson(const String& json){
-    if(json.isEmpty() && json.indexOf(JsonKey::Name) < 0) return false;
+    if(json.isEmpty() || json.indexOf(JsonKey::Name) < 0) return false;
     return true;
   }
 
@@ -434,7 +454,6 @@ namespace JsonReader {
     static bool isValid = false;
     static bool isInitialized = false;
     isValid = validateJson(json);
-
     if (isValid) {
       if (!isInitialized) {
         memorySize = json.length();
@@ -464,38 +483,43 @@ namespace JsonReader {
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
-      return InputJsonStatus::OK;
-    }
+    } else return InputJsonStatus::INVALID_INPUT;
+    return InputJsonStatus::OK;
   }
 
-  void inputJsonParse_ErrorHandler(InputJsonStatus status){
+  void errorHandler(InputJsonStatus status, Stream& stream){
+    const char* inputErrorHeader = "JSON Parse Error: ";
+    stream.print(inputErrorHeader);
     switch (status) {
       case InputJsonStatus::TITLE_NOT_FOUND:
-        Serial.println("title not found");
+        stream.println("title not found");
         break;
       case InputJsonStatus::ELEMENTS_NOT_FOUND:
-        Serial.println("elements not found");
+        stream.println("elements not found");
         break;
       case InputJsonStatus::OBJECT_NOT_VALID:
-        Serial.println("object not valid");
+        stream.println("object not valid");
         break;
       case InputJsonStatus::NAME_NOT_FOUND:
-        Serial.println("name not found");
+        stream.println("name not found");
         break;
       case InputJsonStatus::ALLOC_ERROR:
-        Serial.println("alloc error");
+        stream.println("alloc error");
         break;
       case InputJsonStatus::JSON_OVERFLOW:
-        Serial.println("json overflow");
+        stream.println("json overflow");
         break;
       case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
-        Serial.println("Elements array is empty");
+        stream.println("Elements array is empty");
         break;
       case InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE:
-        Serial.println("Unexpected change of json input size");
+        stream.println("Unexpected change of json input size");
+        break;
+      case InputJsonStatus::INVALID_INPUT:
+        stream.println("Invalid JSON Input");
         break;
       case InputJsonStatus::OK:
-        Serial.println("ok");
+        stream.println("ok");
         break;
     }
   }
@@ -591,6 +615,7 @@ void WiFiInit(){
 
 }
 
+
 void setup(){
   Serial.begin(9600);
   if(!SPIFFS.begin()){
@@ -599,13 +624,13 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-  WiFiInit();
+ WiFiInit();
 
 
-  JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
-  if(status != JsonReader::InputJsonStatus::OK) Serial.println("Some error xd");
-  if(status == JsonReader::InputJsonStatus::ALLOC_ERROR) Serial.println("Zjebales xd");
+  JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(wrongWebsiteStr);
+  JsonReader::errorHandler(status, Serial);
 
+  Log::error("error test", Serial);
 }
 
 
