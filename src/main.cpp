@@ -4,8 +4,6 @@
 #include <FS.h>
 #include <ArduinoJson.h>
 #include <vector>
-#include <memory>
-#include <string>
 
 #define OUTPUT_JSON_INITIAL_SIZE 512
 
@@ -93,7 +91,6 @@ namespace Website {
 
       // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
       // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
-    virtual JsonObject toVisuinoJson() = 0;
     virtual JsonObject toWebsiteJson() = 0;
     bool isInitializedOK() const {return initializedOK;}
     const String& getName() const  {return name;}
@@ -105,7 +102,7 @@ namespace Website {
     uint16_t height;
     uint16_t posX;
     uint16_t posY;
-    uint8_t desktopScale;
+    uint8_t desktopScale{};
     String name;
     String dataType;
   };
@@ -150,6 +147,8 @@ namespace Website {
       Serial.println("DataType not found");
       initializedOK = false;
     }
+    
+
   }
 
 
@@ -157,10 +156,24 @@ namespace Website {
   //                         COMPONENTS CLASSES
   // ----------------------------------------------------------------------------
 
-  class Switch : public WebsiteComponent {
+
+  class InputComponent : public WebsiteComponent {
+  public:
+    explicit InputComponent(const JsonObject& inputObject)
+      : WebsiteComponent(inputObject){
+    }
+    virtual JsonObject toVisuinoJson() = 0;
+  private:
+
+  };
+
+
+
+
+  class Switch : public InputComponent {
   public:
     explicit Switch(const JsonObject& inputObject)
-            : WebsiteComponent(inputObject){
+            : InputComponent(inputObject){
 
       if(inputObject.containsKey(JsonKey::Value)){
         this->value = inputObject[JsonKey::Value];
@@ -186,7 +199,6 @@ namespace Website {
 
     JsonObject toWebsiteJson() override {
       JsonObject websiteObj = jsonMemory.to<JsonObject>();
-
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::DataType] = this->dataType;
       websiteObj[JsonKey::Width] = this->width;
@@ -298,6 +310,25 @@ namespace Website {
 }
 
 
+
+
+namespace Log{
+
+  const char* infoHeader = "Server Info: ";
+  const char* errorHeader = "Server Error: ";
+
+  void info (const char* msg, Stream& stream) {
+    stream.print(infoHeader);
+
+    stream.print(msg);
+  }
+
+  void error (const char* msg, Stream& stream) {
+
+  }
+}
+
+
 const String testWebsiteConfigStr = {R"(
 {
   "title" : "Nice website",
@@ -376,65 +407,95 @@ const String testWebsiteConfigStr = {R"(
 Website::Card card;
 
 namespace JsonReader {
-  size_t documentSize = 0;
-  DynamicJsonDocument* websiteData;
-
+  size_t memorySize = 0;
+  DynamicJsonDocument* jsonMemory;
   enum class InputJsonStatus : uint8_t {
     OK,
     JSON_OVERFLOW,
     ALLOC_ERROR,
     TITLE_NOT_FOUND,
     ELEMENTS_NOT_FOUND,
+    ELEMENTS_ARRAY_EMPTY,
     OBJECT_NOT_VALID,
-    NAME_NOT_FOUND
+    NAME_NOT_FOUND,
+    UNEXPECTED_CHANGE_OF_INPUT_SIZE,
   };
 
-  InputJsonStatus readWebsiteComponentsFromJson(const String& json){
-    static DynamicJsonDocument inputData(json.length());
-    websiteData = new DynamicJsonDocument(json.length());
-    if(inputData.capacity() == 0) return InputJsonStatus::ALLOC_ERROR;
-    uint16 size = inputData.capacity();
-    Serial.println(size);
-    Serial.println(json.length());
-    Website::Card::setJsonMemory(websiteData);
-    static bool isVectorReserved = false;
-    documentSize = inputData.capacity();
-    deserializeJson(inputData, json);
-    if(inputData.overflowed()) return InputJsonStatus::JSON_OVERFLOW;
-    JsonObject inputObject = inputData.as<JsonObject>();
-    if(!inputObject.containsKey(JsonKey::Title)) return InputJsonStatus::TITLE_NOT_FOUND;
-    if(!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
 
-    JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
-
-    if( !isVectorReserved ) {
-      card.reserve(elements.size());
-    }
-
-    using Website::Card;
-    for(JsonObject element : elements){
-      if(card.add(element) != Card::ComponentStatus::OK){
-        return InputJsonStatus::ALLOC_ERROR;
-      }
-    }
-
-
-
-    return InputJsonStatus::OK;
+  bool validateJson(const String& json){
+    if(json.isEmpty() && json.indexOf(JsonKey::Name) < 0) return false;
+    return true;
   }
+
+
+
+
+  InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
+    static bool isValid = false;
+    static bool isInitialized = false;
+    isValid = validateJson(json);
+
+    if (isValid) {
+      if (!isInitialized) {
+        memorySize = json.length();
+        jsonMemory = new DynamicJsonDocument(memorySize);
+        if (jsonMemory->capacity() != 0) {
+          Website::Card::setJsonMemory(jsonMemory);
+          isInitialized = true;
+        } else {
+          delete jsonMemory;
+          return InputJsonStatus::ALLOC_ERROR;
+        }
+      } else if (memorySize != json.length()) {
+        return InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE;
+      }
+      deserializeJson(*jsonMemory, json);
+      if (jsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
+
+      JsonObject inputObject = jsonMemory->as<JsonObject>();
+      if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
+      JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
+      if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
+      card.reserve(elements.size());
+
+      using Website::Card;
+      for (JsonObject element : elements) {
+        if (card.add(element) != Card::ComponentStatus::OK) {
+          return InputJsonStatus::ALLOC_ERROR;
+        }
+      }
+      return InputJsonStatus::OK;
+    }
+  }
+
   void inputJsonParse_ErrorHandler(InputJsonStatus status){
     switch (status) {
       case InputJsonStatus::TITLE_NOT_FOUND:
+        Serial.println("title not found");
         break;
       case InputJsonStatus::ELEMENTS_NOT_FOUND:
+        Serial.println("elements not found");
         break;
       case InputJsonStatus::OBJECT_NOT_VALID:
+        Serial.println("object not valid");
         break;
       case InputJsonStatus::NAME_NOT_FOUND:
+        Serial.println("name not found");
         break;
       case InputJsonStatus::ALLOC_ERROR:
+        Serial.println("alloc error");
+        break;
+      case InputJsonStatus::JSON_OVERFLOW:
+        Serial.println("json overflow");
+        break;
+      case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
+        Serial.println("Elements array is empty");
+        break;
+      case InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE:
+        Serial.println("Unexpected change of json input size");
         break;
       case InputJsonStatus::OK:
+        Serial.println("ok");
         break;
     }
   }
@@ -509,7 +570,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
 
     for(size_t i = 0; i < len; i++){
-            Serial.print(static_cast<char>(data[i]));
+      Serial.print(static_cast<char>(data[i]));
     }
     Serial.println();
 
