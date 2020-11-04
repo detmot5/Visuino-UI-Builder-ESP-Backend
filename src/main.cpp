@@ -2,6 +2,7 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
+#include <StreamString.h>
 #include <ArduinoJson.h>
 #include <vector>
 
@@ -32,17 +33,6 @@ namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
   const bool BooleanValue PROGMEM = false;
 }
-
-namespace ErrorMessages{
-  namespace Memory{
-
-  }
-  namespace JsonInput {
-
-  }
-
-}
-
 
 namespace ComponentType {
   namespace Input {
@@ -82,6 +72,31 @@ namespace JsonKey {
 }
 
 
+namespace ErrorMessage{
+  namespace Memory{
+    const char* HeapFragmentationTooHigh PROGMEM = "Memory - Heap Fragmentation too high, stability problems may occur";
+    const char* LowHeapSpace PROGMEM = "Memory - Low Heap Space, stability problems may occur";
+  }
+
+  namespace JsonInput {
+    const char* InputErrorHeader PROGMEM = "JSON Parse Error: ";
+
+    const char* TitleNotFound PROGMEM = "Title not found";
+    const char* JsonOverflow PROGMEM = "Json Input - overflow";
+    const char* AllocError PROGMEM = "Json Input - Allocation Error";
+    const char* ElementsNotFound PROGMEM = "Json Input - elements not found";
+    const char* ElementsArrayEmpty PROGMEM = "Json Input - array of elements is empty";
+    const char* ObjectNotValid PROGMEM = "Json Input - Object is not valid";
+    const char* NameNotFound PROGMEM = "Json Input - Object name is not found";
+    const char* UnexpectedChangeOfInputSize PROGMEM = "Json Input - Unexpected change of input size";
+    const char* InvalidInput PROGMEM = "Json Input - Invalid input";
+    const char* OK PROGMEM = "Json Input - Ok";
+  }
+}
+
+
+
+
 namespace Website {
 
   class WebsiteComponent {
@@ -95,19 +110,25 @@ namespace Website {
     bool isInitializedOK() const {return initializedOK;}
     const String& getName() const  {return name;}
 
+
+    static void setJsonMemory ( DynamicJsonDocument *mem );
+    static bool isMemoryInitialized() {return memoryInitialized;}
+
+
   protected:
-    static DynamicJsonDocument jsonMemory;
+    static DynamicJsonDocument* jsonMemory;
+    static bool memoryInitialized;
     bool initializedOK;
     uint16_t width;
     uint16_t height;
     uint16_t posX;
     uint16_t posY;
-    uint8_t desktopScale{};
+    uint8_t desktopScale;
     String name;
     String dataType;
   };
-
-  DynamicJsonDocument WebsiteComponent::jsonMemory(OUTPUT_JSON_INITIAL_SIZE);
+  DynamicJsonDocument* WebsiteComponent::jsonMemory = nullptr;
+  bool WebsiteComponent::memoryInitialized = false;
 
   WebsiteComponent::WebsiteComponent(const JsonObject& inputObject){
     initializedOK = true;
@@ -147,10 +168,15 @@ namespace Website {
       Serial.println("DataType not found");
       initializedOK = false;
     }
-    
-
   }
 
+
+  void WebsiteComponent::setJsonMemory ( DynamicJsonDocument *mem ) {
+    if ( mem != nullptr ) {
+      jsonMemory = mem;
+      memoryInitialized = true;
+    }
+  }
 
   // ----------------------------------------------------------------------------
   //                         COMPONENTS CLASSES
@@ -190,7 +216,8 @@ namespace Website {
     }
 
     JsonObject toVisuinoJson() override {
-      JsonObject outputObj = jsonMemory.to<JsonObject>();
+      if(!isMemoryInitialized()) return {};
+      JsonObject outputObj = jsonMemory->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::DataType] = this->dataType;
       outputObj[JsonKey::Value] = this->value;
@@ -198,7 +225,8 @@ namespace Website {
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory.to<JsonObject>();
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::DataType] = this->dataType;
       websiteObj[JsonKey::Width] = this->width;
@@ -314,33 +342,33 @@ namespace Website {
 
 namespace Log {
 
-  const char* infoHeader PROGMEM = "Server Info: ";
-  const char* errorHeader PROGMEM = "Server Error: ";
+  const char* InfoHeader PROGMEM = "Server Info: ";
+  const char* ErrorHeader PROGMEM = "Server Error: ";
 
-  const char* memStats PROGMEM = "Memory stats: ";
-  const char* heapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
-  const char* freeHeapMsg PROGMEM = "- Free heap: ";
-  const char* maxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
+  const char* MemStats PROGMEM = "Memory stats: ";
+  const char* HeapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
+  const char* FreeHeapMsg PROGMEM = "- Free heap: ";
+  const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
 
   void memoryInfo(Stream& stream){
-    Serial.println(memStats);
-    stream.print(heapFragmentationMsg);
+    Serial.println(MemStats);
+    stream.print(HeapFragmentationMsg);
     stream.println(ESP.getHeapFragmentation());
 
-    stream.print(freeHeapMsg);
+    stream.print(FreeHeapMsg);
     stream.println(ESP.getFreeHeap());
 
-    stream.print(maxFreeHeapBlock);
+    stream.print(MaxFreeHeapBlock);
     stream.println(ESP.getMaxFreeBlockSize());
   }
 
   void info (const char* msg, Stream& stream) {
-    stream.print(infoHeader);
+    stream.print(InfoHeader);
     stream.print(msg);
   }
 
   void error (const char* msg, Stream& stream) {
-    stream.print(errorHeader);
+    stream.print(ErrorHeader);
     stream.println(msg);
     memoryInfo(stream);
   }
@@ -427,7 +455,8 @@ Website::Card card;
 
 namespace JsonReader {
   size_t memorySize = 0;
-  DynamicJsonDocument* jsonMemory;
+  DynamicJsonDocument* inputJsonMemory = nullptr;
+  DynamicJsonDocument* componentJsonMemory = nullptr;
   enum class InputJsonStatus : uint8_t {
     OK,
     JSON_OVERFLOW,
@@ -448,38 +477,37 @@ namespace JsonReader {
   }
 
 
-
-
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
     static bool isValid = false;
     static bool isInitialized = false;
     isValid = validateJson(json);
     if (isValid) {
       if (!isInitialized) {
-        memorySize = json.length();
-        jsonMemory = new DynamicJsonDocument(memorySize);
-        if (jsonMemory->capacity() != 0) {
-          Website::Card::setJsonMemory(jsonMemory);
+        memorySize = json.length() * 2;
+        inputJsonMemory =  new DynamicJsonDocument(memorySize);
+        componentJsonMemory = new DynamicJsonDocument(memorySize);
+        if (inputJsonMemory->capacity() != 0) {
+          Website::Card::setJsonMemory(inputJsonMemory);
+          Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
           isInitialized = true;
         } else {
-          delete jsonMemory;
+          delete inputJsonMemory;
           return InputJsonStatus::ALLOC_ERROR;
         }
       } else if (memorySize != json.length()) {
         return InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE;
       }
-      deserializeJson(*jsonMemory, json);
-      if (jsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
+      deserializeJson(*inputJsonMemory, json);
+      if (inputJsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
 
-      JsonObject inputObject = jsonMemory->as<JsonObject>();
+      JsonObject inputObject = inputJsonMemory->as<JsonObject>();
       if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
       JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
       if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
       card.reserve(elements.size());
 
-      using Website::Card;
       for (JsonObject element : elements) {
-        if (card.add(element) != Card::ComponentStatus::OK) {
+        if (card.add(element) != Website::Card::ComponentStatus::OK) {
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
@@ -488,38 +516,38 @@ namespace JsonReader {
   }
 
   void errorHandler(InputJsonStatus status, Stream& stream){
-    const char* inputErrorHeader = "JSON Parse Error: ";
-    stream.print(inputErrorHeader);
+    using namespace ErrorMessage::JsonInput;
+    if(status != InputJsonStatus::OK) stream.print(InputErrorHeader);
     switch (status) {
       case InputJsonStatus::TITLE_NOT_FOUND:
-        stream.println("title not found");
+        stream.println(TitleNotFound);
         break;
       case InputJsonStatus::ELEMENTS_NOT_FOUND:
-        stream.println("elements not found");
+        stream.println(ElementsNotFound);
         break;
       case InputJsonStatus::OBJECT_NOT_VALID:
-        stream.println("object not valid");
+        stream.println(ObjectNotValid);
         break;
       case InputJsonStatus::NAME_NOT_FOUND:
-        stream.println("name not found");
+        stream.println(NameNotFound);
         break;
       case InputJsonStatus::ALLOC_ERROR:
-        stream.println("alloc error");
+        stream.println(AllocError);
         break;
       case InputJsonStatus::JSON_OVERFLOW:
-        stream.println("json overflow");
+        stream.println(JsonOverflow);
         break;
       case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
-        stream.println("Elements array is empty");
+        stream.println(ElementsArrayEmpty);
         break;
       case InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE:
-        stream.println("Unexpected change of json input size");
+        stream.println(UnexpectedChangeOfInputSize);
         break;
       case InputJsonStatus::INVALID_INPUT:
-        stream.println("Invalid JSON Input");
+        stream.println(InvalidInput);
         break;
       case InputJsonStatus::OK:
-        stream.println("ok");
+        stream.println(ErrorMessage::JsonInput::OK);
         break;
     }
   }
@@ -615,8 +643,8 @@ void WiFiInit(){
 
 }
 
-
 void setup(){
+
   Serial.begin(9600);
   if(!SPIFFS.begin()){
     Serial.println("An Error has occurred while mounting SPIFFS");
@@ -627,9 +655,8 @@ void setup(){
  WiFiInit();
 
 
-  JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(wrongWebsiteStr);
+  JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
   JsonReader::errorHandler(status, Serial);
-
   Log::error("error test", Serial);
 }
 
