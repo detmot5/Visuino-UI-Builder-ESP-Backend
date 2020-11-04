@@ -186,8 +186,7 @@ namespace Website {
   class InputComponent : public WebsiteComponent {
   public:
     explicit InputComponent(const JsonObject& inputObject)
-      : WebsiteComponent(inputObject){
-    }
+      : WebsiteComponent(inputObject) {}
     virtual JsonObject toVisuinoJson() = 0;
   private:
 
@@ -200,7 +199,6 @@ namespace Website {
   public:
     explicit Switch(const JsonObject& inputObject)
             : InputComponent(inputObject){
-
       if(inputObject.containsKey(JsonKey::Value)){
         this->value = inputObject[JsonKey::Value];
       } else {
@@ -253,6 +251,7 @@ namespace Website {
     enum class ComponentStatus : uint8_t{
       OK,
       OBJECT_NOT_VALID,
+      ALREADY_EXISTS
     };
 
     static void setJsonMemory(DynamicJsonDocument* mem);
@@ -274,6 +273,7 @@ namespace Website {
 
   Card::ComponentStatus Card::add(JsonObject object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
+    if(componentAlreadyExists(object[JsonKey::Name])) return ComponentStatus::ALREADY_EXISTS;
     String componentType = object[JsonKey::ComponentType];
     using namespace ComponentType;
       // TODO: abstract it
@@ -350,7 +350,7 @@ namespace Log {
   const char* FreeHeapMsg PROGMEM = "- Free heap: ";
   const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
 
-  void memoryInfo(Stream& stream){
+  void memoryInfo(Stream& stream) {
     Serial.println(MemStats);
     stream.print(HeapFragmentationMsg);
     stream.println(ESP.getHeapFragmentation());
@@ -486,7 +486,7 @@ namespace JsonReader {
         memorySize = json.length() * 2;
         inputJsonMemory =  new DynamicJsonDocument(memorySize);
         componentJsonMemory = new DynamicJsonDocument(memorySize);
-        if (inputJsonMemory->capacity() != 0) {
+        if (inputJsonMemory->capacity() != 0 && componentJsonMemory->capacity() != 0) {
           Website::Card::setJsonMemory(inputJsonMemory);
           Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
           isInitialized = true;
@@ -494,7 +494,7 @@ namespace JsonReader {
           delete inputJsonMemory;
           return InputJsonStatus::ALLOC_ERROR;
         }
-      } else if (memorySize != json.length()) {
+      } else if (memorySize != json.length() * 2) {
         return InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE;
       }
       deserializeJson(*inputJsonMemory, json);
@@ -552,11 +552,6 @@ namespace JsonReader {
     }
   }
 }
-
-
-
-
-
 
 
 
@@ -658,6 +653,25 @@ void setup(){
   JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
   JsonReader::errorHandler(status, Serial);
   Log::error("error test", Serial);
+
+
+
+  String str = "Twoja stara";
+
+  StreamString streamString;
+
+  streamString.print(str);
+
+  streamString.print(302);
+
+  int num = streamString.parseInt();
+  String out = streamString.readString();
+
+  Serial.println(num);
+  Serial.println(out);
+
+  Log::memoryInfo(Serial);
+
 }
 
 
