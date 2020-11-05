@@ -31,6 +31,7 @@ String numberServerOutput;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const uint8_t FontSize PROGMEM = 16;
   const bool BooleanValue PROGMEM = false;
 }
 
@@ -69,6 +70,7 @@ namespace JsonKey {
   const char* ComponentType PROGMEM = "componentType";
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
+  const char* FontSize PROGMEM = "fontSize";
 }
 
 
@@ -95,14 +97,13 @@ namespace ErrorMessage{
 }
 
 
-
-
 namespace Website {
 
   class WebsiteComponent {
   public:
     explicit WebsiteComponent(const JsonObject& inputObject);
     virtual ~WebsiteComponent() = default;
+
 
       // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
       // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
@@ -113,7 +114,6 @@ namespace Website {
 
     static void setJsonMemory ( DynamicJsonDocument *mem );
     static bool isMemoryInitialized() {return memoryInitialized;}
-
 
   protected:
     static DynamicJsonDocument* jsonMemory;
@@ -186,12 +186,17 @@ namespace Website {
   class InputComponent : public WebsiteComponent {
   public:
     explicit InputComponent(const JsonObject& inputObject)
-      : WebsiteComponent(inputObject) {}
-    virtual JsonObject toVisuinoJson() = 0;
-  private:
-
+      : WebsiteComponent(inputObject) {
+    }
+    virtual JsonObject toVisuinoJson() = 0; //using common memory
   };
 
+  class OutputComponent : public WebsiteComponent {
+  public:
+    explicit OutputComponent(const JsonObject& inputObject)
+      : WebsiteComponent(inputObject){
+    }
+  };
 
 
 
@@ -236,13 +241,51 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
     }
-
-    void setValue(bool newValue) {this->value = newValue;}
-    bool getValue() const {return this->value;}
   private:
     bool value;
     String color;
   };
+
+
+  class Label : public OutputComponent {
+  public:
+    explicit Label(const JsonObject& inputObject)
+    : OutputComponent(inputObject) {
+      if(inputObject.containsKey(JsonKey::FontSize)){
+        this->fontSize = inputObject[JsonKey::FontSize];
+      } else fontSize = DefaultValues::FontSize;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value].as<String>();
+      } else this->value = "";
+    }
+
+    JsonObject toWebsiteJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::DataType] = this->dataType;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::Color] = this->color;
+    }
+    const String& getValue() const {return value;}
+    void setValue(const String& nvalue) {this->value = nvalue;}
+
+
+  private:
+    uint8_t fontSize;
+    String color;
+    String value;
+  };
+
+
+
 
   class Card {
   public:
@@ -261,6 +304,8 @@ namespace Website {
     void garbageCollect();
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
+    template <typename componentType> bool parseInputComponent(const char* componentName, JsonObject& object);
+    template <typename componentType> bool parseOutputComponent(const char* componentName, JsonObject& object);
     static DynamicJsonDocument* jsonMemory;
     static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
@@ -271,21 +316,19 @@ namespace Website {
   DynamicJsonDocument* Card::jsonMemory = nullptr;
   bool Card::isMemoryInitialized = false;
 
+
+
+
   Card::ComponentStatus Card::add(JsonObject object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
-    if(componentAlreadyExists(object[JsonKey::Name])) return ComponentStatus::ALREADY_EXISTS;
-    String componentType = object[JsonKey::ComponentType];
+    const char* componentName = object[JsonKey::Name];
+    const char* componentType = object[JsonKey::ComponentType];
     using namespace ComponentType;
-      // TODO: abstract it
-    if(componentType.equals(Input::Switch)) {
-      WebsiteComponent* component = new Switch(object);
-      Serial.println(componentType);
-      Serial.println(component->getName());
-      if(component->isInitializedOK()) components.push_back(component);
-      else {
-        delete component;
-        return ComponentStatus::OBJECT_NOT_VALID;
-      }
+
+    if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
+      parseInputComponent<Switch>(componentName, object);
+    } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
+      parseOutputComponent<Label>(componentName, object);
     }
     //else if(componentType.equals(Input::Slider)) components.push_back(new Slider(object));
     return ComponentStatus::OK;
@@ -333,6 +376,36 @@ namespace Website {
   void Card::setJsonMemory(DynamicJsonDocument *mem) {
     jsonMemory = mem;
     isMemoryInitialized = true;
+  }
+
+  template<typename componentType>
+  bool Card::parseOutputComponent(const char* componentName, JsonObject& object) {
+    if(!componentAlreadyExists(componentName)){
+      auto component = new componentType(object);
+      if(component->isInitializedOK()) components.push_back(component);
+      else {
+        delete component;
+        return false;
+      }
+    } else {
+      auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
+      component->setValue(object[JsonKey::Value]);
+    }
+    return true;
+  }
+
+  template<typename componentType>
+  bool Card::parseInputComponent(const char *componentName, JsonObject &object) {
+    if(!componentAlreadyExists(componentName)){
+      auto component = new componentType(object);
+      if(component->isInitializedOK()) components.push_back(component);
+      else {
+        delete component;
+        return false;
+      }
+    } else return false;
+
+    return true;
   }
 
 }
@@ -445,6 +518,17 @@ const String testWebsiteConfigStr = {R"(
       "posY" : 350,
       "color" : "#abcgdb",
       "value": true
+    },
+    {
+      "name" : "LightBulb",
+      "dataType" : "boolean",
+      "width" : 4,
+      "height" : 22,
+      "componentType" : "switch",
+      "posX" : 140,
+      "posY" : 310,
+      "color" : "#abcgdb",
+      "value": false
     }
   ]
 })"};
