@@ -31,6 +31,7 @@ String numberServerOutput;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
   const bool BooleanValue PROGMEM = false;
 }
@@ -53,6 +54,7 @@ namespace ComponentType {
 namespace DataType{
   const char* Boolean PROGMEM = "boolean";
   const char* Number PROGMEM = "number";
+  const char* Str PROGMEM = "string";
 }
 
 
@@ -62,8 +64,6 @@ namespace JsonKey {
   const char* Elements PROGMEM = "elements";
 
   const char* Name PROGMEM = "name";
-  const char* Width PROGMEM = "width";
-  const char* Height PROGMEM = "height";
   const char* PosX PROGMEM = "posX";
   const char* PosY PROGMEM = "posY";
   const char* DataType PROGMEM = "dataType";
@@ -71,6 +71,9 @@ namespace JsonKey {
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
   const char* FontSize PROGMEM = "fontSize";
+
+  const char* SwitchSize PROGMEM = "size";
+
 }
 
 
@@ -119,8 +122,6 @@ namespace Website {
     static DynamicJsonDocument* jsonMemory;
     static bool memoryInitialized;
     bool initializedOK;
-    uint16_t width;
-    uint16_t height;
     uint16_t posX;
     uint16_t posY;
     uint8_t desktopScale;
@@ -138,18 +139,6 @@ namespace Website {
       Serial.println("Name not found");
       initializedOK = false;
     }
-    if(inputObject.containsKey(JsonKey::Width)){
-      this->width = inputObject[JsonKey::Width];
-    } else {
-      Serial.println("Width not found");
-      initializedOK = false;
-    }
-    if(inputObject.containsKey(JsonKey::Height)){
-      this->height = inputObject[JsonKey::Height];
-    } else {
-      Serial.println("Height not found");
-      initializedOK = false;
-    }
     if(inputObject.containsKey(JsonKey::PosX)) {
       this->posX = inputObject[JsonKey::PosX];
     } else {
@@ -162,12 +151,7 @@ namespace Website {
       Serial.println("PosY not found");
       initializedOK = false;
     }
-    if(inputObject.containsKey(JsonKey::DataType)){
-      this->dataType = inputObject[JsonKey::DataType].as<String>();
-    } else {
-      Serial.println("DataType not found");
-      initializedOK = false;
-    }
+
   }
 
 
@@ -196,6 +180,9 @@ namespace Website {
     explicit OutputComponent(const JsonObject& inputObject)
       : WebsiteComponent(inputObject){
     }
+
+    virtual void setState(JsonArray& arr) = 0;
+
   };
 
 
@@ -210,12 +197,13 @@ namespace Website {
         Serial.println("Value not found");
         this->value = DefaultValues::BooleanValue;
       }
+      if(inputObject.containsKey(JsonKey::SwitchSize)){
+        this->size = inputObject[JsonKey::SwitchSize].as<String>();
+      } else this->size = DefaultValues::SwitchSize;
+
       if(inputObject.containsKey(JsonKey::Color)){
         this->color = inputObject[JsonKey::Color].as<String>();
-      } else {
-        Serial.println("Color not found");
-        this->color = DefaultValues::Color;
-      }
+      } else this->color = DefaultValues::Color;
     }
 
     JsonObject toVisuinoJson() override {
@@ -231,19 +219,18 @@ namespace Website {
       if(!isMemoryInitialized()) return {};
       JsonObject websiteObj = jsonMemory->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
-      websiteObj[JsonKey::DataType] = this->dataType;
-      websiteObj[JsonKey::Width] = this->width;
-      websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::SwitchSize] = this->size;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
     }
   private:
     bool value;
     String color;
+    String size;
   };
 
 
@@ -266,14 +253,16 @@ namespace Website {
       if(!isMemoryInitialized()) return {};
       JsonObject websiteObj = jsonMemory->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
-      websiteObj[JsonKey::DataType] = this->dataType;
-      websiteObj[JsonKey::Width] = this->width;
-      websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Label;
+      return websiteObj;
     }
+
+    void setState(JsonArray& arr) override {}
+
     const String& getValue() const {return value;}
     void setValue(const String& nvalue) {this->value = nvalue;}
 
@@ -305,7 +294,7 @@ namespace Website {
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
     template <typename componentType> bool parseInputComponent(const char* componentName, JsonObject& object);
-    template <typename componentType> bool parseOutputComponent(const char* componentName, JsonObject& object);
+    template <typename componentType, typename dataType> bool parseOutputComponent(const char* componentName, JsonObject& object);
     static DynamicJsonDocument* jsonMemory;
     static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
@@ -328,7 +317,7 @@ namespace Website {
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponent<Switch>(componentName, object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
-      parseOutputComponent<Label>(componentName, object);
+      parseOutputComponent<Label, String>(componentName, object);
     }
     //else if(componentType.equals(Input::Slider)) components.push_back(new Slider(object));
     return ComponentStatus::OK;
@@ -378,7 +367,7 @@ namespace Website {
     isMemoryInitialized = true;
   }
 
-  template<typename componentType>
+  template<typename componentType, typename dataType>
   bool Card::parseOutputComponent(const char* componentName, JsonObject& object) {
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
@@ -389,7 +378,7 @@ namespace Website {
       }
     } else {
       auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
-      component->setValue(object[JsonKey::Value]);
+      component->setValue(object[JsonKey::Value].as<dataType>());
     }
     return true;
   }
@@ -424,7 +413,7 @@ namespace Log {
   const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
 
   void memoryInfo(Stream& stream) {
-    Serial.println(MemStats);
+    stream.println(MemStats);
     stream.print(HeapFragmentationMsg);
     stream.println(ESP.getHeapFragmentation());
 
@@ -451,86 +440,89 @@ const String wrongWebsiteStr = {R"(gugugwno)"};
 
 const String testWebsiteConfigStr = {R"(
 {
-  "title" : "Nice website",
   "elements" : [
-    {
-      "name" : "Lamp2",
-      "dataType" : "boolean",
-      "width" : 20,
-      "height" : 10,
-      "componentType" : "switch",
-      "posX" : 20,
-      "posY" : 40,
-      "color" : "#ffeefe",
-      "value": false
-    },
-    {
-      "name" : "Motor",
-      "dataType" : "boolean",
-      "width" : 21,
-      "height" : 15,
-      "componentType" : "switch",
-      "posX" : 250,
-      "posY" : 300,
-      "color" : "#abcdef",
-      "value": false
-    },
-    {
-      "name" : "Nothing",
-      "dataType" : "boolean",
-      "width" : 22,
-      "height" : 11,
-      "componentType" : "switch",
-      "posX" : 200,
-      "posY" : 150,
-      "color" : "#aaaaaa",
-      "value": false
-    },
-    {
-      "name" : "Something",
-      "dataType" : "boolean",
-      "width" : 27,
-      "height" : 14,
-      "componentType" : "switch",
-      "posX" : 200,
-      "posY" : 350,
-      "color" : "#bbaaaa",
-      "value": true
-    },
-    {
-      "name" : "Servo",
-      "dataType" : "boolean",
-      "width" : 18,
-      "height" : 11,
-      "componentType" : "switch",
-      "posX" : 200,
-      "posY" : 300,
-      "color" : "#abcada",
-      "value": true
-    },
-    {
-      "name" : "LightBulb",
-      "dataType" : "boolean",
-      "width" : 1,
-      "height" : 29,
-      "componentType" : "switch",
-      "posX" : 100,
-      "posY" : 350,
-      "color" : "#abcgdb",
-      "value": true
-    },
-    {
-      "name" : "LightBulb",
-      "dataType" : "boolean",
-      "width" : 4,
-      "height" : 22,
-      "componentType" : "switch",
-      "posX" : 140,
-      "posY" : 310,
-      "color" : "#abcgdb",
-      "value": false
-    }
+      {
+        "name" : "Lamp2",
+        "size" : "default",
+        "componentType" : "switch",
+        "posX" : 100,
+        "posY" : 100,
+        "color" : "blue",
+        "value": false
+      },
+      {
+        "name" : "Motor",
+        "size" : "large",
+        "componentType" : "switch",
+        "posX" : 400,
+        "posY" : 400,
+        "color" : "#abcdef",
+        "value": false
+      },
+      {
+        "name" : "Nothing",
+        "size" : "large",
+        "componentType" : "switch",
+        "posX" : 170,
+        "posY" : 100,
+        "color" : "lightgreen",
+        "value": false
+      },
+      {
+        "name" : "Something",
+        "size" : "small",
+        "componentType" : "switch",
+        "posX" : 50,
+        "posY" : 150,
+        "color" : "#bbaaaa",
+        "value": true
+      },
+      {
+        "name" : "Servo",
+        "size" : "large",
+        "componentType" : "switch",
+        "dataType" : "boolean",
+        "posX" : 170,
+        "posY" : 150,
+        "color" : "#abcada",
+        "value": true
+      },
+      {
+        "name" : "LightBulb",
+        "size" : "default",
+        "componentType" : "switch",
+        "posX" : 100,
+        "posY" : 150,
+        "color" : "#00ffe5",
+        "value": true
+      },
+      {
+        "name" : "bulb",
+        "size" : "small",
+        "componentType" : "switch",
+        "posX" : 50,
+        "posY" : 100,
+        "color" : "orange",
+        "value": true
+      },
+      {
+        "name" : "Info",
+        "componentType" : "label",
+        "posX" : 200,
+        "posY" : 350,
+        "color" : "#ff2233",
+        "value": "Siema wam wszystkim"
+      },
+      {
+        "name" : "Switch Info",
+        "componentType" : "label",
+        "posX" : 120,
+        "posY" : 200,
+        "color" : "#444",
+        "value": "Switches"
+      }
   ]
+
 })"};
 
 
@@ -551,7 +543,6 @@ namespace JsonReader {
     ELEMENTS_ARRAY_EMPTY,
     OBJECT_NOT_VALID,
     NAME_NOT_FOUND,
-    UNEXPECTED_CHANGE_OF_INPUT_SIZE,
   };
 
 
@@ -578,8 +569,6 @@ namespace JsonReader {
           delete inputJsonMemory;
           return InputJsonStatus::ALLOC_ERROR;
         }
-      } else if (memorySize != json.length() * 2) {
-        return InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE;
       }
       deserializeJson(*inputJsonMemory, json);
       if (inputJsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
@@ -624,9 +613,6 @@ namespace JsonReader {
       case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
         stream.println(ElementsArrayEmpty);
         break;
-      case InputJsonStatus::UNEXPECTED_CHANGE_OF_INPUT_SIZE:
-        stream.println(UnexpectedChangeOfInputSize);
-        break;
       case InputJsonStatus::INVALID_INPUT:
         stream.println(InvalidInput);
         break;
@@ -645,7 +631,7 @@ void fullCorsAllow(AsyncWebServerResponse* response){
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS, CORS_ALLOWED_HEADERS);
 }
 
-void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
+void HTTPServeWebsite(AsyncWebServer& webServer){
 
   webServer.on("/", HTTP_GET, [](AsyncWebServerRequest* request){
     request->send(SPIFFS, "/index.html");
@@ -655,24 +641,24 @@ void HTTPSendWebsiteFiles(AsyncWebServer& webServer){
     request->send(SPIFFS, "/index.css","text/css");
   });
 
-  webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/component.css","text/css");
-  });
-
-  webServer.on("/numberInput.css", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/numberInput.css","text/css");
-  });
-
   webServer.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/index.js","application/javascript");
+  });
+
+  webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/component.css","text/css");
   });
 
   webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/component.js","application/javascript");
   });
 
-  webServer.on("/numberInput.js", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/numberInput.js","application/javascript");
+  webServer.on("/Libs/switch.js", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/Libs/switch.js","application/javascript");
+  });
+
+  webServer.on("/Libs/switch.css", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/Libs/switch.css","text/css");
   });
 
   webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -716,7 +702,7 @@ void WiFiInit(){
   if(WiFi.softAP(ssid, password)) Serial.println("connected");
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());
-  HTTPSendWebsiteFiles(server);
+  HTTPServeWebsite(server);
   HTTPSetMappings(server);
   server.begin();
 
@@ -731,31 +717,15 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
- WiFiInit();
+  WiFiInit();
 
-
+  uint32_t before = millis();
   JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
   JsonReader::errorHandler(status, Serial);
+  uint32 after = millis();
+  Serial.print("Execution time: ");
+  Serial.println(after - before);
   Log::error("error test", Serial);
-
-
-
-  String str = "Twoja stara";
-
-  StreamString streamString;
-
-  streamString.print(str);
-
-  streamString.print(302);
-
-  int num = streamString.parseInt();
-  String out = streamString.readString();
-
-  Serial.println(num);
-  Serial.println(out);
-
-  Log::memoryInfo(Serial);
-
 }
 
 
