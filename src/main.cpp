@@ -257,6 +257,7 @@ namespace Website {
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::FontSize] = this->fontSize;
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Label;
       return websiteObj;
     }
