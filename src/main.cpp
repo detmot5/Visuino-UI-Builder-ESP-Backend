@@ -181,7 +181,7 @@ namespace Website {
       : WebsiteComponent(inputObject){
     }
 
-    virtual void setState(JsonArray& arr) = 0;
+    virtual void setState(JsonObject& object) = 0;
 
   };
 
@@ -261,7 +261,17 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(JsonArray& arr) override {}
+    void setState(JsonObject& object) override {
+      if(object.containsKey(JsonKey::FontSize)){
+        this->fontSize = object[JsonKey::FontSize];
+      }
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value].as<String>();
+      }
+    }
 
     const String& getValue() const {return value;}
     void setValue(const String& nvalue) {this->value = nvalue;}
@@ -272,6 +282,9 @@ namespace Website {
     String color;
     String value;
   };
+
+
+
 
 
 
@@ -294,7 +307,7 @@ namespace Website {
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
     template <typename componentType> bool parseInputComponent(const char* componentName, JsonObject& object);
-    template <typename componentType, typename dataType> bool parseOutputComponent(const char* componentName, JsonObject& object);
+    template <typename componentType> bool parseOutputComponent(const char* componentName, JsonObject& object);
     static DynamicJsonDocument* jsonMemory;
     static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
@@ -317,8 +330,9 @@ namespace Website {
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponent<Switch>(componentName, object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
-      parseOutputComponent<Label, String>(componentName, object);
+      parseOutputComponent<Label>(componentName, object);
     }
+
     //else if(componentType.equals(Input::Slider)) components.push_back(new Slider(object));
     return ComponentStatus::OK;
   }
@@ -367,7 +381,7 @@ namespace Website {
     isMemoryInitialized = true;
   }
 
-  template<typename componentType, typename dataType>
+  template<typename componentType>
   bool Card::parseOutputComponent(const char* componentName, JsonObject& object) {
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
@@ -378,7 +392,7 @@ namespace Website {
       }
     } else {
       auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
-      component->setValue(object[JsonKey::Value].as<dataType>());
+      component->setState(object);
     }
     return true;
   }
@@ -567,6 +581,7 @@ namespace JsonReader {
           isInitialized = true;
         } else {
           delete inputJsonMemory;
+          delete componentJsonMemory;
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
