@@ -34,6 +34,8 @@ namespace DefaultValues {
   const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
   const bool BooleanValue PROGMEM = false;
+  const uint16_t Width PROGMEM = 100;
+  const uint16_t Height PROGMEM = 100;
 }
 
 namespace ComponentType {
@@ -64,6 +66,8 @@ namespace JsonKey {
   const char* Elements PROGMEM = "elements";
 
   const char* Name PROGMEM = "name";
+  const char* Width PROGMEM = "width";
+  const char* Height PROGMEM = "height";
   const char* PosX PROGMEM = "posX";
   const char* PosY PROGMEM = "posY";
   const char* DataType PROGMEM = "dataType";
@@ -73,6 +77,9 @@ namespace JsonKey {
   const char* FontSize PROGMEM = "fontSize";
 
   const char* SwitchSize PROGMEM = "size";
+
+  const char* MaxValue PROGMEM = "maxValue";
+  const char* MinValue PROGMEM = "minValue";
 
 }
 
@@ -287,6 +294,72 @@ namespace Website {
 
 
 
+  class Gauge : public OutputComponent{
+  public:
+    explicit Gauge(const JsonObject& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
+      if(inputObject.containsKey(JsonKey::MaxValue)){
+        this->valueMax = inputObject[JsonKey::MaxValue];
+      } else {
+        this->valueMax = 0;
+        initializedOK = false;
+      }
+      if(inputObject.containsKey(JsonKey::MinValue)){
+        this->valueMin = inputObject[JsonKey::MinValue];
+      } else {
+        this->valueMax = 0;
+        initializedOK = false;
+      }
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = DefaultValues::Width;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = DefaultValues::Height;
+    }
+
+    JsonObject toWebsiteJson() override{
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::MaxValue] = this->valueMax;
+      websiteObj[JsonKey::MinValue] = this->valueMin;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Gauge;
+      return websiteObj;
+    }
+
+    void setState(JsonObject &object) override{
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      } else this->value = 0;
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
+    }
+
+  private:
+    uint32_t value;
+    uint32_t valueMin;
+    uint32_t valueMax;
+    uint16_t width;
+    uint16_t height;
+    String color;
+  };
+
+
+
+
+
 
 
 
@@ -321,24 +394,25 @@ namespace Website {
 
 
 
-
+  // TODO JsonObject as const reference
   Card::ComponentStatus Card::add(JsonObject object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
     const char* componentName = object[JsonKey::Name];
     const char* componentType = object[JsonKey::ComponentType];
     using namespace ComponentType;
-
+    // TODO abstract strncmp()
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponent<Switch>(componentName, object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponent<Label>(componentName, object);
+    } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
+      parseOutputComponent<Gauge>(componentType, object);
     }
-
-    //else if(componentType.equals(Input::Slider)) components.push_back(new Slider(object));
     return ComponentStatus::OK;
   }
 
   JsonObject Card::onHTTPRequest() {
+    // TODO refactor it
     if(isMemoryInitialized){
       jsonMemory->clear();
       JsonObject object = jsonMemory->to<JsonObject>();
@@ -346,6 +420,7 @@ namespace Website {
       for(auto component : this->components) {
         elements.add(component->toWebsiteJson());
       }
+
       return object;
     } else{
       Serial.println("not initialized");
@@ -675,6 +750,10 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 
   webServer.on("/Libs/switch.css", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/switch.css","text/css");
+  });
+
+  webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
   });
 
   webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
