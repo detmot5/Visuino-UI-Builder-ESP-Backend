@@ -333,6 +333,8 @@ namespace Website {
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::MaxValue] = this->valueMax;
       websiteObj[JsonKey::MinValue] = this->valueMin;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::Color] = this->color;
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Gauge;
       return websiteObj;
@@ -406,7 +408,7 @@ namespace Website {
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponent<Label>(componentName, object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
-      parseOutputComponent<Gauge>(componentType, object);
+      parseOutputComponent<Gauge>(componentName, object);
     }
     return ComponentStatus::OK;
   }
@@ -610,6 +612,18 @@ const String testWebsiteConfigStr = {R"(
         "posY" : 200,
         "color" : "#444",
         "value": "Switches"
+      },
+      {
+        "name" : "Speed",
+        "componentType" : "gauge",
+        "posX" : 200,
+        "posY" : 300,
+        "color" : "red",
+        "value": 740,
+        "maxValue": 800,
+        "minValue": 0,
+        "width" : 200,
+        "height": 100
       }
   ]
 
