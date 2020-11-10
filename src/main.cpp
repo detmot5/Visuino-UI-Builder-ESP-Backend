@@ -20,6 +20,11 @@
 #define HTTP_STATUS_BAD_REQUEST 400
 #define HTTP_STATUS_INTERNAL_SERVER_ERROR 500
 
+
+namespace WebsiteServer{
+  
+}
+
 AsyncWebServer server(80);
 
 const char* ssid     = "ESP8266-Access-Point";
@@ -111,7 +116,7 @@ namespace Website {
 
   class WebsiteComponent {
   public:
-    explicit WebsiteComponent(const JsonObject& inputObject);
+    explicit WebsiteComponent(const JsonObjectConst& inputObject);
     virtual ~WebsiteComponent() = default;
 
 
@@ -138,7 +143,7 @@ namespace Website {
   DynamicJsonDocument* WebsiteComponent::jsonMemory = nullptr;
   bool WebsiteComponent::memoryInitialized = false;
 
-  WebsiteComponent::WebsiteComponent(const JsonObject& inputObject){
+  WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
     initializedOK = true;
     if(inputObject.containsKey(JsonKey::Name)){
       this->name = inputObject[JsonKey::Name].as<String>();
@@ -176,7 +181,7 @@ namespace Website {
 
   class InputComponent : public WebsiteComponent {
   public:
-    explicit InputComponent(const JsonObject& inputObject)
+    explicit InputComponent(const JsonObjectConst& inputObject)
       : WebsiteComponent(inputObject) {
     }
     virtual JsonObject toVisuinoJson() = 0; //using common memory
@@ -184,19 +189,17 @@ namespace Website {
 
   class OutputComponent : public WebsiteComponent {
   public:
-    explicit OutputComponent(const JsonObject& inputObject)
+    explicit OutputComponent(const JsonObjectConst& inputObject)
       : WebsiteComponent(inputObject){
     }
-
-    virtual void setState(JsonObject& object) = 0;
-
+    virtual void setState(const JsonObjectConst& object) = 0;
   };
 
 
 
   class Switch : public InputComponent {
   public:
-    explicit Switch(const JsonObject& inputObject)
+    explicit Switch(const JsonObjectConst& inputObject)
             : InputComponent(inputObject){
       if(inputObject.containsKey(JsonKey::Value)){
         this->value = inputObject[JsonKey::Value];
@@ -243,7 +246,7 @@ namespace Website {
 
   class Label : public OutputComponent {
   public:
-    explicit Label(const JsonObject& inputObject)
+    explicit Label(const JsonObjectConst& inputObject)
     : OutputComponent(inputObject) {
       if(inputObject.containsKey(JsonKey::FontSize)){
         this->fontSize = inputObject[JsonKey::FontSize];
@@ -269,7 +272,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(JsonObject& object) override {
+    void setState(const JsonObjectConst& object) override {
       if(object.containsKey(JsonKey::FontSize)){
         this->fontSize = object[JsonKey::FontSize];
       }
@@ -296,7 +299,7 @@ namespace Website {
 
   class Gauge : public OutputComponent{
   public:
-    explicit Gauge(const JsonObject& inputObject)
+    explicit Gauge(const JsonObjectConst& inputObject)
       : OutputComponent(inputObject){
       if(inputObject.containsKey(JsonKey::Value)){
         this->value = inputObject[JsonKey::Value];
@@ -340,7 +343,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(JsonObject &object) override{
+    void setState(const JsonObjectConst &object) override{
       if(object.containsKey(JsonKey::Value)){
         this->value = object[JsonKey::Value];
       } else this->value = 0;
@@ -376,14 +379,14 @@ namespace Website {
     };
 
     static void setJsonMemory(DynamicJsonDocument* mem);
-    ComponentStatus add(JsonObject object);
+    ComponentStatus add(const JsonObjectConst& object);
     JsonObject onHTTPRequest();
     void reserve(size_t size);
     void garbageCollect();
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
-    template <typename componentType> bool parseInputComponent(const char* componentName, JsonObject& object);
-    template <typename componentType> bool parseOutputComponent(const char* componentName, JsonObject& object);
+    template <typename componentType> bool parseInputComponent(const char* componentName, const JsonObjectConst& object);
+    template <typename componentType> bool parseOutputComponent(const char* componentName, const JsonObjectConst& object);
     static DynamicJsonDocument* jsonMemory;
     static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
@@ -396,8 +399,7 @@ namespace Website {
 
 
 
-  // TODO JsonObject as const reference
-  Card::ComponentStatus Card::add(JsonObject object) {
+  Card::ComponentStatus Card::add(const JsonObjectConst& object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
     const char* componentName = object[JsonKey::Name];
     const char* componentType = object[JsonKey::ComponentType];
@@ -460,7 +462,7 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseOutputComponent(const char* componentName, JsonObject& object) {
+  bool Card::parseOutputComponent(const char* componentName, const JsonObjectConst& object) {
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
       if(component->isInitializedOK()) components.push_back(component);
@@ -476,7 +478,7 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseInputComponent(const char *componentName, JsonObject &object) {
+  bool Card::parseInputComponent(const char *componentName, const JsonObjectConst& object) {
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
       if(component->isInitializedOK()) components.push_back(component);
@@ -649,29 +651,33 @@ namespace JsonReader {
     NAME_NOT_FOUND,
   };
 
-
   bool validateJson(const String& json){
     if(json.isEmpty() || json.indexOf(JsonKey::Name) < 0) return false;
     return true;
   }
 
+  size_t getBiggestObjectSize(const JsonArrayConst& arr){
+    size_t biggest = 0;
+    for (const auto &item : arr) {
+      if(item.memoryUsage() > biggest) biggest = item.memoryUsage();
+    }
+    return biggest;
+  }
 
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
     static bool isValid = false;
     static bool isInitialized = false;
+    static bool isElementsInitialized = false;
     isValid = validateJson(json);
     if (isValid) {
       if (!isInitialized) {
-        memorySize = json.length() * 2;
-        inputJsonMemory =  new DynamicJsonDocument(memorySize);
-        componentJsonMemory = new DynamicJsonDocument(memorySize);
-        if (inputJsonMemory->capacity() != 0 && componentJsonMemory->capacity() != 0) {
+        memorySize = json.length();
+        inputJsonMemory =  new DynamicJsonDocument(memorySize * 2);
+        if (inputJsonMemory->capacity() != 0) {
           Website::Card::setJsonMemory(inputJsonMemory);
-          Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
           isInitialized = true;
         } else {
           delete inputJsonMemory;
-          delete componentJsonMemory;
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
@@ -682,13 +688,27 @@ namespace JsonReader {
       if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
       JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
       if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
-      card.reserve(elements.size());
+      if(!isElementsInitialized) {
+        size_t biggestObjectSize = getBiggestObjectSize(elements);
+        componentJsonMemory = new DynamicJsonDocument(biggestObjectSize * 2);
+        if(componentJsonMemory->capacity() != 0){
+          Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
+          isElementsInitialized = true;
+        } else {
+          delete componentJsonMemory;
+          return InputJsonStatus::ALLOC_ERROR;
+        }
+      }
 
+      card.reserve(elements.size());
+      Serial.println((int) inputJsonMemory->capacity());
+      Serial.println((int) componentJsonMemory->capacity());
       for (JsonObject element : elements) {
         if (card.add(element) != Website::Card::ComponentStatus::OK) {
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
+
     } else return InputJsonStatus::INVALID_INPUT;
     return InputJsonStatus::OK;
   }
