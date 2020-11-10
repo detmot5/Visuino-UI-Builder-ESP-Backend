@@ -23,8 +23,6 @@
 // TODO: put all in namespace
 namespace WebsiteServer{
   
-}
-
 AsyncWebServer server(80);
 
 const char* ssid     = "ESP8266-Access-Point";
@@ -290,6 +288,7 @@ namespace Website {
 
 
   private:
+    static StreamString ostream;
     uint8_t fontSize;
     String color;
     String value;
@@ -699,8 +698,6 @@ namespace JsonReader {
       }
 
       card.reserve(elements.size());
-      Serial.println((int) inputJsonMemory->capacity());
-      Serial.println((int) componentJsonMemory->capacity());
       for (JsonObject element : elements) {
         if (card.add(element) != Website::Card::ComponentStatus::OK) {
           return InputJsonStatus::ALLOC_ERROR;
@@ -749,7 +746,7 @@ namespace JsonReader {
 
 
 namespace JsonWriter{
-  
+
 }
 
 
@@ -807,6 +804,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK);
+    request->send(response);
   });
 
 
@@ -838,8 +836,9 @@ void WiFiInit(){
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
   server.begin();
-
 }
+}
+
 
 void setup(){
 
@@ -850,11 +849,11 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-  WiFiInit();
+  WebsiteServer::WiFiInit();
 
   uint32_t before = millis();
-  JsonReader::InputJsonStatus status = JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr);
-  JsonReader::errorHandler(status, Serial);
+  WebsiteServer::JsonReader::InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
+  WebsiteServer::JsonReader::errorHandler(status, Serial);
   uint32 after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
