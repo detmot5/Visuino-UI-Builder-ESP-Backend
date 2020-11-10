@@ -20,7 +20,7 @@
 #define HTTP_STATUS_BAD_REQUEST 400
 #define HTTP_STATUS_INTERNAL_SERVER_ERROR 500
 
-
+// TODO: put all in namespace
 namespace WebsiteServer{
   
 }
@@ -127,7 +127,7 @@ namespace Website {
     const String& getName() const  {return name;}
 
 
-    static void setJsonMemory ( DynamicJsonDocument *mem );
+    static void setJsonMemory (DynamicJsonDocument* mem);
     static bool isMemoryInitialized() {return memoryInitialized;}
 
   protected:
@@ -136,6 +136,7 @@ namespace Website {
     bool initializedOK;
     uint16_t posX;
     uint16_t posY;
+    // TODO: implement it
     uint8_t desktopScale;
     String name;
     String dataType;
@@ -404,7 +405,7 @@ namespace Website {
     const char* componentName = object[JsonKey::Name];
     const char* componentType = object[JsonKey::ComponentType];
     using namespace ComponentType;
-    // TODO abstract strncmp()
+
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponent<Switch>(componentName, object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
@@ -416,15 +417,12 @@ namespace Website {
   }
 
   JsonObject Card::onHTTPRequest() {
-    // TODO refactor it
     if(isMemoryInitialized){
-      jsonMemory->clear();
       JsonObject object = jsonMemory->to<JsonObject>();
       JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
       for(auto component : this->components) {
         elements.add(component->toWebsiteJson());
       }
-
       return object;
     } else{
       Serial.println("not initialized");
@@ -746,6 +744,12 @@ namespace JsonReader {
         break;
     }
   }
+}
+
+
+
+namespace JsonWriter{
+  
 }
 
 
