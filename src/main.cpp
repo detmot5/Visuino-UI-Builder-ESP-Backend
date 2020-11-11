@@ -2,9 +2,11 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
-#include <StreamString.h>
-#include <ArduinoJson.h>
 #include <vector>
+#include <sstream>
+
+#define ARDUINOJSON_ENABLE_STD_STREAM 1
+#include <ArduinoJson.h>
 
 #define OUTPUT_JSON_INITIAL_SIZE 512
 
@@ -121,13 +123,13 @@ namespace Website {
       // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
       // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
     virtual JsonObject toWebsiteJson() = 0;
+    virtual void setState(const JsonObjectConst& object) = 0;
     bool isInitializedOK() const {return initializedOK;}
     const String& getName() const  {return name;}
 
 
     static void setJsonMemory (DynamicJsonDocument* mem);
     static bool isMemoryInitialized() {return memoryInitialized;}
-
   protected:
     static DynamicJsonDocument* jsonMemory;
     static bool memoryInitialized;
@@ -191,7 +193,6 @@ namespace Website {
     explicit OutputComponent(const JsonObjectConst& inputObject)
       : WebsiteComponent(inputObject){
     }
-    virtual void setState(const JsonObjectConst& object) = 0;
   };
 
 
@@ -219,7 +220,6 @@ namespace Website {
       if(!isMemoryInitialized()) return {};
       JsonObject outputObj = jsonMemory->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
-      outputObj[JsonKey::DataType] = this->dataType;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
@@ -236,11 +236,20 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
     }
+
+    void setState(const JsonObjectConst& object) override {
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+    }
+    static std::stringstream outputStream;
   private:
     bool value;
     String color;
     String size;
   };
+
+  std::stringstream Switch::outputStream;
 
 
   class Label : public OutputComponent {
@@ -283,12 +292,7 @@ namespace Website {
       }
     }
 
-    const String& getValue() const {return value;}
-    void setValue(const String& nvalue) {this->value = nvalue;}
-
-
   private:
-    static StreamString ostream;
     uint8_t fontSize;
     String color;
     String value;
@@ -362,12 +366,6 @@ namespace Website {
   };
 
 
-
-
-
-
-
-
   class Card {
   public:
     Card() = default;
@@ -381,6 +379,7 @@ namespace Website {
     static void setJsonMemory(DynamicJsonDocument* mem);
     ComponentStatus add(const JsonObjectConst& object);
     JsonObject onHTTPRequest();
+    bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
     void reserve(size_t size);
     void garbageCollect();
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
@@ -392,6 +391,7 @@ namespace Website {
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
     std::vector<WebsiteComponent*> components;
+
   };
 
   DynamicJsonDocument* Card::jsonMemory = nullptr;
@@ -429,10 +429,28 @@ namespace Website {
     }
   }
 
+  bool Card::onComponentStatusHTTPRequest(const uint8_t* data, size_t len){
+    if(!isMemoryInitialized) return false;
+    deserializeJson(*jsonMemory, reinterpret_cast<const char*>(data), len);
+    auto receivedJson = jsonMemory->as<JsonObject>();
+    const char* componentName = receivedJson[JsonKey::Name];
+    const char* componentType = receivedJson[JsonKey::ComponentType];
+    using namespace ComponentType;
+    if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
+      auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
+      component->setState(receivedJson);
+      serializeJson(component->toVisuinoJson(), Switch::outputStream);
+      return true;
+    }
+    return false;
+  }
+
+
   bool Card::componentAlreadyExists(const char* componentName) {
     bool res = false;
     if(getComponentByName(componentName) != nullptr) res = true;
     return res;
+
   }
 
   void Card::reserve(size_t size){
@@ -475,7 +493,7 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseInputComponent(const char *componentName, const JsonObjectConst& object) {
+  bool Card::parseInputComponent(const char* componentName, const JsonObjectConst& object) {
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
       if(component->isInitializedOK()) components.push_back(component);
@@ -817,10 +835,11 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
 
-    for(size_t i = 0; i < len; i++){
-      Serial.print(static_cast<char>(data[i]));
-    }
-    Serial.println();
+    card.onComponentStatusHTTPRequest(data, len);
+    using Website::Switch;
+    std::string a;
+    Switch::outputStream >> a;
+    Serial.println(a.c_str());
 
     request->send(HTTP_STATUS_OK);
   });
@@ -836,6 +855,7 @@ void WiFiInit(){
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
   server.begin();
+
 }
 }
 
@@ -857,7 +877,7 @@ void setup(){
   uint32 after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
-  Log::error("error test", Serial);
+  WebsiteServer::Log::error("error test", Serial);
 }
 
 
