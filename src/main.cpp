@@ -7,6 +7,7 @@
 
 #define ARDUINOJSON_ENABLE_STD_STREAM 1
 #include <ArduinoJson.h>
+#include <StreamString.h>
 
 #define OUTPUT_JSON_INITIAL_SIZE 512
 
@@ -261,6 +262,26 @@ namespace Website {
   String Switch::str;
   bool Switch::isDataReady = false;
 
+  class Slider : public InputComponent {
+  public:
+    Slider(const JsonObjectConst& inputObject)
+      : InputComponent(inputObject) {
+
+    }
+
+
+
+
+    static bool isDataReady;
+  private:
+    static String str;
+    String color;
+    uint16_t width;
+    uint32_t value;
+    uint32_t minValue;
+    uint32_t maxValue;
+  };
+
   class Label : public OutputComponent {
   public:
     explicit Label(const JsonObjectConst& inputObject)
@@ -411,7 +432,6 @@ namespace Website {
 
   Card::ComponentStatus Card::add(const JsonObjectConst& object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
-    const char* componentName = object[JsonKey::Name];
     const char* componentType = object[JsonKey::ComponentType];
     using namespace ComponentType;
 
@@ -530,39 +550,7 @@ namespace Website {
 
 
 
-namespace Log {
 
-  const char* InfoHeader PROGMEM = "Server Info: ";
-  const char* ErrorHeader PROGMEM = "Server Error: ";
-
-  const char* MemStats PROGMEM = "Memory stats: ";
-  const char* HeapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
-  const char* FreeHeapMsg PROGMEM = "- Free heap: ";
-  const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
-
-  void memoryInfo(Stream& stream) {
-    stream.println(MemStats);
-    stream.print(HeapFragmentationMsg);
-    stream.println(ESP.getHeapFragmentation());
-
-    stream.print(FreeHeapMsg);
-    stream.println(ESP.getFreeHeap());
-
-    stream.print(MaxFreeHeapBlock);
-    stream.println(ESP.getMaxFreeBlockSize());
-  }
-
-  void info (const char* msg, Stream& stream) {
-    stream.print(InfoHeader);
-    stream.print(msg);
-  }
-
-  void error (const char* msg, Stream& stream) {
-    stream.print(ErrorHeader);
-    stream.println(msg);
-    memoryInfo(stream);
-  }
-}
 
 const String wrongWebsiteStr = {R"(gugugwno)"};
 
@@ -745,41 +733,79 @@ namespace JsonReader {
     return InputJsonStatus::OK;
   }
 
-  void errorHandler(InputJsonStatus status, Stream& stream){
+
+  const char* errorHandler(InputJsonStatus status){
     using namespace ErrorMessage::JsonInput;
-    if(status != InputJsonStatus::OK) stream.print(InputErrorHeader);
+    const char* statusStr = nullptr;
     switch (status) {
       case InputJsonStatus::TITLE_NOT_FOUND:
-        stream.println(TitleNotFound);
+        statusStr = TitleNotFound;
         break;
       case InputJsonStatus::ELEMENTS_NOT_FOUND:
-        stream.println(ElementsNotFound);
+        statusStr = ElementsNotFound;
         break;
       case InputJsonStatus::OBJECT_NOT_VALID:
-        stream.println(ObjectNotValid);
+        statusStr = ObjectNotValid;
         break;
       case InputJsonStatus::NAME_NOT_FOUND:
-        stream.println(NameNotFound);
+        statusStr = NameNotFound;
         break;
       case InputJsonStatus::ALLOC_ERROR:
-        stream.println(AllocError);
+        statusStr = AllocError;
         break;
       case InputJsonStatus::JSON_OVERFLOW:
-        stream.println(JsonOverflow);
+        statusStr = AllocError;
         break;
       case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
-        stream.println(ElementsArrayEmpty);
+        statusStr = ElementsArrayEmpty;
         break;
       case InputJsonStatus::INVALID_INPUT:
-        stream.println(InvalidInput);
+        statusStr = InvalidInput;
         break;
       case InputJsonStatus::OK:
-        stream.println(ErrorMessage::JsonInput::OK);
+        statusStr = ErrorMessage::JsonInput::OK;
         break;
     }
+    return statusStr;
   }
 }
+  namespace Log {
+    StreamString errorStream;
+    bool isDataReady = false;
+    const char* InfoHeader PROGMEM = "Server Info: ";
+    const char* ErrorHeader PROGMEM = "Server Error: ";
 
+    const char* MemStats PROGMEM = "Memory stats: ";
+    const char* HeapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
+    const char* FreeHeapMsg PROGMEM = "- Free heap: ";
+    const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
+
+    void memoryInfo(Stream& stream = errorStream) {
+      stream.println(MemStats);
+      stream.print(HeapFragmentationMsg);
+      stream.println(ESP.getHeapFragmentation());
+
+      stream.print(FreeHeapMsg);
+      stream.println(ESP.getFreeHeap());
+
+      stream.print(MaxFreeHeapBlock);
+      stream.println(ESP.getMaxFreeBlockSize());
+      isDataReady = true;
+    }
+
+    void info (const char* msg, Stream& stream = errorStream) {
+      stream.print(InfoHeader);
+      stream.print(msg);
+      isDataReady = true;
+    }
+
+    void error (const char* msg, Stream& stream = errorStream) {
+      stream.print(ErrorHeader);
+      stream.println(msg);
+      memoryInfo(stream);
+      isDataReady = true;
+    }
+  }
 
 
 namespace JsonWriter{
@@ -789,6 +815,12 @@ namespace JsonWriter{
       Serial.println(Switch::getVisuinoOutput());
       //ServerSwitchOutput.Send(Switch::toString());
       Switch::isDataReady = false;
+    }
+    if(Log::isDataReady){
+      //LogOutput.Send(Log::errorStream.c_str());
+      Serial.println(Log::errorStream.c_str());
+      Log::errorStream.clear();
+      Log::isDataReady = false;
     }
   }
 }
@@ -862,7 +894,6 @@ void HTTPSetMappings(AsyncWebServer& webServer){
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
 
     card.onComponentStatusHTTPRequest(data, len);
-    Log::memoryInfo(Serial);
     request->send(HTTP_STATUS_OK);
   });
 }
@@ -876,6 +907,7 @@ void WiFiInit(){
   Serial.println(WiFi.softAPIP());
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
+  Log::errorStream.reserve(100);
   server.begin();
 
 }
@@ -894,8 +926,11 @@ void setup(){
   WebsiteServer::WiFiInit();
 
   uint32_t before = millis();
-  WebsiteServer::JsonReader::InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
-  WebsiteServer::JsonReader::errorHandler(status, Serial);
+  using namespace WebsiteServer;
+  using namespace WebsiteServer::JsonReader;
+  InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
+  const char* msg = errorHandler(status);
+  if(status != InputJsonStatus::OK) Log::error(msg);
   uint32 after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
