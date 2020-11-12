@@ -186,6 +186,7 @@ namespace Website {
       : WebsiteComponent(inputObject) {
     }
     virtual JsonObject toVisuinoJson() = 0; //using common memory
+  private:
   };
 
   class OutputComponent : public WebsiteComponent {
@@ -242,15 +243,23 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
     }
-    static std::stringstream outputStream;
+
+    static void setVisuinoOutput(const JsonObjectConst& obj) {
+      str.clear();
+      serializeJson(obj, str);
+      isDataReady = true;
+    }
+    static const String& getVisuinoOutput() {return str;}
+    static bool isDataReady;
   private:
+    static String str;
     bool value;
     String color;
     String size;
   };
 
-  std::stringstream Switch::outputStream;
-
+  String Switch::str;
+  bool Switch::isDataReady = false;
 
   class Label : public OutputComponent {
   public:
@@ -384,8 +393,9 @@ namespace Website {
     void garbageCollect();
     const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
-    template <typename componentType> bool parseInputComponent(const char* componentName, const JsonObjectConst& object);
-    template <typename componentType> bool parseOutputComponent(const char* componentName, const JsonObjectConst& object);
+    template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
+    template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
+    template<typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
     static DynamicJsonDocument* jsonMemory;
     static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
@@ -406,11 +416,11 @@ namespace Website {
     using namespace ComponentType;
 
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
-      parseInputComponent<Switch>(componentName, object);
+      parseInputComponentToWebsite<Switch>(object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
-      parseOutputComponent<Label>(componentName, object);
+      parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
-      parseOutputComponent<Gauge>(componentName, object);
+      parseOutputComponentToWebsite<Gauge>(object);
     }
     return ComponentStatus::OK;
   }
@@ -437,10 +447,7 @@ namespace Website {
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
-      auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
-      component->setState(receivedJson);
-      serializeJson(component->toVisuinoJson(), Switch::outputStream);
-      return true;
+      return parseInputComponentToVisuino<Switch>(receivedJson);
     }
     return false;
   }
@@ -477,7 +484,8 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseOutputComponent(const char* componentName, const JsonObjectConst& object) {
+  bool Card::parseOutputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
       if(component->isInitializedOK()) components.push_back(component);
@@ -493,7 +501,8 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseInputComponent(const char* componentName, const JsonObjectConst& object) {
+  bool Card::parseInputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
     if(!componentAlreadyExists(componentName)){
       auto component = new componentType(object);
       if(component->isInitializedOK()) components.push_back(component);
@@ -503,6 +512,16 @@ namespace Website {
       }
     } else return false;
 
+    return true;
+  }
+
+  template<typename componentType>
+  bool Card::parseInputComponentToVisuino(const JsonObjectConst &object) {
+    const char* componentName = object[JsonKey::Name];
+    auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
+    if(component == nullptr) return false;
+    component->setState(object);
+    componentType::setVisuinoOutput(object);
     return true;
   }
 
@@ -764,7 +783,14 @@ namespace JsonReader {
 
 
 namespace JsonWriter{
-
+  void write() {
+    using namespace Website;
+    if(Switch::isDataReady){
+      Serial.println(Switch::getVisuinoOutput());
+      //ServerSwitchOutput.Send(Switch::toString());
+      Switch::isDataReady = false;
+    }
+  }
 }
 
 
@@ -836,11 +862,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
 
     card.onComponentStatusHTTPRequest(data, len);
-    using Website::Switch;
-    std::string a;
-    Switch::outputStream >> a;
-    Serial.println(a.c_str());
-
+    Log::memoryInfo(Serial);
     request->send(HTTP_STATUS_OK);
   });
 }
@@ -883,6 +905,6 @@ void setup(){
 
 
 void loop(){
-
+  WebsiteServer::JsonWriter::write();
 }
 
