@@ -9,31 +9,32 @@
 #include <ArduinoJson.h>
 #include <StreamString.h>
 
-#define OUTPUT_JSON_INITIAL_SIZE 512
-
-#define CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN  "Access-Control-Allow-Origin"
-#define CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS "Access-Control-Allow-Methods"
-#define CORS_ALLOWED_METHODS "POST,GET,OPTIONS"
-
-#define CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS "Access-Control-Allow-Headers"
-#define CORS_ALLOWED_HEADERS "Origin, X-Requested-With, Content-Type, Accept"
 
 
-#define HTTP_STATUS_OK 200
-#define HTTP_STATUS_BAD_REQUEST 400
-#define HTTP_STATUS_INTERNAL_SERVER_ERROR 500
 
-// TODO: put all in namespace
 namespace WebsiteServer{
   
 AsyncWebServer server(80);
 
+
+
 const char* ssid     = "ESP8266-Access-Point";
 const char* password = "123456789";
 
+const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
+const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS PROGMEM = "Access-Control-Allow-Methods";
+const char* CORS_ALLOWED_METHODS PROGMEM = "POST,GET,OPTIONS";
 
-String booleanServerOutput;
-String numberServerOutput;
+const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS PROGMEM = "Access-Control-Allow-Headers";
+const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Type, Accept";
+
+
+const uint16_t HTTP_STATUS_OK PROGMEM = 200;
+const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
+const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
+
+
+
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
@@ -106,7 +107,6 @@ namespace ErrorMessage{
     const char* ElementsArrayEmpty PROGMEM = "Json Input - array of elements is empty";
     const char* ObjectNotValid PROGMEM = "Json Input - Object is not valid";
     const char* NameNotFound PROGMEM = "Json Input - Object name is not found";
-    const char* UnexpectedChangeOfInputSize PROGMEM = "Json Input - Unexpected change of input size";
     const char* InvalidInput PROGMEM = "Json Input - Invalid input";
     const char* OK PROGMEM = "Json Input - Ok";
   }
@@ -147,7 +147,7 @@ namespace Website {
 
   WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
     initializedOK = true;
-    if(inputObject.containsKey(JsonKey::Name)){
+    if(inputObject.containsKey(JsonKey::Name)) {
       this->name = inputObject[JsonKey::Name].as<String>();
     } else {
       Serial.println("Name not found");
@@ -159,7 +159,7 @@ namespace Website {
       Serial.println("PosX not found");
       initializedOK = false;
     }
-    if(inputObject.containsKey(JsonKey::PosY)){
+    if(inputObject.containsKey(JsonKey::PosY)) {
       this->posY = inputObject[JsonKey::PosY];
     } else {
       Serial.println("PosY not found");
@@ -169,7 +169,7 @@ namespace Website {
   }
 
 
-  void WebsiteComponent::setJsonMemory ( DynamicJsonDocument *mem ) {
+  void WebsiteComponent::setJsonMemory (DynamicJsonDocument* mem) {
     if ( mem != nullptr ) {
       jsonMemory = mem;
       memoryInitialized = true;
@@ -264,23 +264,75 @@ namespace Website {
 
   class Slider : public InputComponent {
   public:
-    Slider(const JsonObjectConst& inputObject)
+    explicit Slider(const JsonObjectConst& inputObject)
       : InputComponent(inputObject) {
-
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::MinValue)){
+        this->minValue = inputObject[JsonKey::MinValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::MaxValue)){
+        this->maxValue = inputObject[JsonKey::MaxValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
     }
 
+    JsonObject toVisuinoJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      outputObj[JsonKey::Name] = this->name;
+      outputObj[JsonKey::Value] = this->value;
+      return outputObj;
+    }
 
+    JsonObject toWebsiteJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::MaxValue] = this->maxValue;
+      websiteObj[JsonKey::MinValue] = this->minValue;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Input::Slider;
+      return websiteObj;
+    }
 
+    void setState(const JsonObjectConst& object) override {
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+    }
 
+    static void setVisuinoOutput(const JsonObjectConst& obj) {
+      str.clear();
+      serializeJson(obj, str);
+      isDataReady = true;
+    }
     static bool isDataReady;
   private:
     static String str;
     String color;
     uint16_t width;
+    uint16_t height;
     uint32_t value;
     uint32_t minValue;
     uint32_t maxValue;
   };
+  String Slider::str;
+  bool Slider::isDataReady;
 
   class Label : public OutputComponent {
   public:
@@ -330,7 +382,6 @@ namespace Website {
 
 
 
-
   class Gauge : public OutputComponent{
   public:
     explicit Gauge(const JsonObjectConst& inputObject)
@@ -342,15 +393,15 @@ namespace Website {
         this->color = inputObject[JsonKey::Color].as<String>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::MaxValue)){
-        this->valueMax = inputObject[JsonKey::MaxValue];
+        this->maxValue = inputObject[JsonKey::MaxValue];
       } else {
-        this->valueMax = 0;
+        this->maxValue = 0;
         initializedOK = false;
       }
       if(inputObject.containsKey(JsonKey::MinValue)){
-        this->valueMin = inputObject[JsonKey::MinValue];
+        this->minValue = inputObject[JsonKey::MinValue];
       } else {
-        this->valueMax = 0;
+        this->maxValue = 0;
         initializedOK = false;
       }
       if(inputObject.containsKey(JsonKey::Width)){
@@ -368,8 +419,8 @@ namespace Website {
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
-      websiteObj[JsonKey::MaxValue] = this->valueMax;
-      websiteObj[JsonKey::MinValue] = this->valueMin;
+      websiteObj[JsonKey::MaxValue] = this->maxValue;
+      websiteObj[JsonKey::MinValue] = this->minValue;
       websiteObj[JsonKey::Width] = this->width;
       websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::Color] = this->color;
@@ -388,8 +439,8 @@ namespace Website {
 
   private:
     uint32_t value;
-    uint32_t valueMin;
-    uint32_t valueMax;
+    uint32_t minValue;
+    uint32_t maxValue;
     uint16_t width;
     uint16_t height;
     String color;
@@ -437,6 +488,8 @@ namespace Website {
 
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponentToWebsite<Switch>(object);
+    } else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
+      parseOutputComponentToWebsite<Slider>(object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
@@ -468,6 +521,8 @@ namespace Website {
     using namespace ComponentType;
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       return parseInputComponentToVisuino<Switch>(receivedJson);
+    }else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
+      return parseInputComponentToVisuino<Slider>(receivedJson);
     }
     return false;
   }
@@ -648,6 +703,30 @@ const String testWebsiteConfigStr = {R"(
         "minValue": 0,
         "width" : 200,
         "height": 100
+      },
+      {
+        "name" : "Slidee",
+        "componentType" : "slider",
+        "posX" : 300,
+        "posY" : 150,
+        "color" : "blue",
+        "value": 740,
+        "maxValue": 800,
+        "minValue": 0,
+        "width" : 500,
+        "height": 20
+      },
+      {
+        "name" : "Sliderrrre",
+        "componentType" : "slider",
+        "posX" : 300,
+        "posY" : 250,
+        "color" : "green",
+        "value": 320,
+        "maxValue": 800,
+        "minValue": 0,
+        "width" : 250,
+        "height": 20
       }
   ]
 
