@@ -5,7 +5,6 @@
 #include <vector>
 #include <sstream>
 
-#define ARDUINOJSON_ENABLE_STD_STREAM 1
 #include <ArduinoJson.h>
 #include <StreamString.h>
 
@@ -40,9 +39,9 @@ namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
   const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
-  const bool BooleanValue PROGMEM = false;
   const uint16_t Width PROGMEM = 100;
   const uint16_t Height PROGMEM = 100;
+  const bool BooleanValue PROGMEM = false;
 }
 
 namespace ComponentType {
@@ -50,7 +49,7 @@ namespace ComponentType {
     const char* Switch PROGMEM = "switch";
     const char* Slider PROGMEM = "slider";
     const char* CheckBox PROGMEM = "checkbox";
-    const char* NumberInput PROGMEM = "numberinput";
+    const char* NumberInput PROGMEM = "numberInput";
   }
   namespace Output {
     const char* Label PROGMEM = "label";
@@ -321,6 +320,7 @@ namespace Website {
       serializeJson(obj, str);
       isDataReady = true;
     }
+    static const String& getVisuinoOutput() {return str;}
     static bool isDataReady;
   private:
     static String str;
@@ -333,6 +333,72 @@ namespace Website {
   };
   String Slider::str;
   bool Slider::isDataReady;
+
+
+  class NumberInput : public InputComponent {
+  public:
+    explicit NumberInput(const JsonObjectConst& inputObject)
+      : InputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0.0f;
+      if(inputObject.containsKey(JsonKey::FontSize)){
+        this->fontSize = inputObject[JsonKey::FontSize];
+      } else this->fontSize = DefaultValues::FontSize;
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = 100;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      }
+    }
+
+    JsonObject toVisuinoJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      outputObj[JsonKey::Name] = this->name;
+      outputObj[JsonKey::Value] = this->value;
+      return outputObj;
+    }
+
+
+    JsonObject toWebsiteJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Input::NumberInput;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override {
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+    }
+
+    static void setVisuinoOutput(const JsonObjectConst& obj) {
+      str.clear();
+      serializeJson(obj, str);
+      isDataReady = true;
+    }
+    static const String& getVisuinoOutput() {return str;}
+    static bool isDataReady;
+
+  private:
+    static String str;
+    float value;
+    uint16_t width;
+    uint16_t fontSize;
+    String color;
+  };
+
+  String NumberInput::str;
+  bool NumberInput::isDataReady;
 
   class Label : public OutputComponent {
   public:
@@ -375,7 +441,7 @@ namespace Website {
     }
 
   private:
-    uint8_t fontSize;
+    uint16_t fontSize;
     String color;
     String value;
   };
@@ -454,7 +520,7 @@ namespace Website {
     enum class ComponentStatus : uint8_t{
       OK,
       OBJECT_NOT_VALID,
-      ALREADY_EXISTS
+      UNKNOWN_NAME,
     };
 
     static void setJsonMemory(DynamicJsonDocument* mem);
@@ -488,12 +554,16 @@ namespace Website {
 
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponentToWebsite<Switch>(object);
+    } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
+      parseOutputComponentToWebsite<NumberInput>(object);
     } else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
       parseOutputComponentToWebsite<Slider>(object);
     } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
       parseOutputComponentToWebsite<Gauge>(object);
+    } else {
+      return ComponentStatus::OBJECT_NOT_VALID;
     }
     return ComponentStatus::OK;
   }
@@ -516,13 +586,14 @@ namespace Website {
     if(!isMemoryInitialized) return false;
     deserializeJson(*jsonMemory, reinterpret_cast<const char*>(data), len);
     auto receivedJson = jsonMemory->as<JsonObject>();
-    const char* componentName = receivedJson[JsonKey::Name];
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       return parseInputComponentToVisuino<Switch>(receivedJson);
     }else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
       return parseInputComponentToVisuino<Slider>(receivedJson);
+    } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))){
+      return parseInputComponentToVisuino<NumberInput>(receivedJson);
     }
     return false;
   }
@@ -591,18 +662,16 @@ namespace Website {
   }
 
   template<typename componentType>
-  bool Card::parseInputComponentToVisuino(const JsonObjectConst &object) {
+  bool Card::parseInputComponentToVisuino(const JsonObjectConst& object) {
     const char* componentName = object[JsonKey::Name];
     auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
     if(component == nullptr) return false;
     component->setState(object);
-    componentType::setVisuinoOutput(object);
+    componentType::setVisuinoOutput(component->toVisuinoJson());
     return true;
   }
 
 }
-
-
 
 
 
@@ -727,7 +796,18 @@ const String testWebsiteConfigStr = {R"(
         "minValue": 0,
         "width" : 250,
         "height": 20
-      }
+      },
+      {
+        "name": "other temperature",
+        "color": "blue",
+        "fontSize": 16,
+        "width": 150,
+        "value": 44.2,
+        "desktopScale": 2,
+        "componentType": "numberInput",
+        "posY": 200,
+        "posX": 400
+    }
   ]
 
 })"};
@@ -804,7 +884,7 @@ namespace JsonReader {
       card.reserve(elements.size());
       for (JsonObject element : elements) {
         if (card.add(element) != Website::Card::ComponentStatus::OK) {
-          return InputJsonStatus::ALLOC_ERROR;
+          return InputJsonStatus::OBJECT_NOT_VALID;
         }
       }
 
@@ -833,7 +913,7 @@ namespace JsonReader {
         statusStr = AllocError;
         break;
       case InputJsonStatus::JSON_OVERFLOW:
-        statusStr = AllocError;
+        statusStr = JsonOverflow;
         break;
       case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
         statusStr = ElementsArrayEmpty;
@@ -890,16 +970,24 @@ namespace JsonReader {
 namespace JsonWriter{
   void write() {
     using namespace Website;
-    if(Switch::isDataReady){
-      Serial.println(Switch::getVisuinoOutput());
-      //ServerSwitchOutput.Send(Switch::toString());
-      Switch::isDataReady = false;
-    }
     if(Log::isDataReady){
       //LogOutput.Send(Log::errorStream.c_str());
       Serial.println(Log::errorStream.c_str());
       Log::errorStream.clear();
       Log::isDataReady = false;
+    }
+    if(Switch::isDataReady){
+      Serial.println(Switch::getVisuinoOutput());
+      //ServerSwitchOutput.Send(Switch::toString());
+      Switch::isDataReady = false;
+    }
+    if(Slider::isDataReady){
+      Serial.println(Slider::getVisuinoOutput());
+      Slider::isDataReady = false;
+    }
+    if(NumberInput::isDataReady) {
+      Serial.println(NumberInput::getVisuinoOutput());
+      NumberInput::isDataReady = false;
     }
   }
 }
@@ -988,7 +1076,6 @@ void WiFiInit(){
   HTTPSetMappings(server);
   Log::errorStream.reserve(100);
   server.begin();
-
 }
 }
 
