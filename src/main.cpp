@@ -37,6 +37,7 @@ const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const char* TextColor PROGMEM = "white";
   const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
@@ -50,6 +51,7 @@ namespace ComponentType {
     const char* Slider PROGMEM = "slider";
     const char* CheckBox PROGMEM = "checkbox";
     const char* NumberInput PROGMEM = "numberInput";
+    const char* Button PROGMEM = "button";
   }
   namespace Output {
     const char* Label PROGMEM = "label";
@@ -81,6 +83,8 @@ namespace JsonKey {
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
   const char* FontSize PROGMEM = "fontSize";
+  const char* Text PROGMEM = "text";
+  const char* TextColor PROGMEM = "textColor";
 
   const char* SwitchSize PROGMEM = "size";
 
@@ -400,6 +404,81 @@ namespace Website {
   String NumberInput::str;
   bool NumberInput::isDataReady;
 
+
+  class Button : public InputComponent {
+  public:
+    explicit Button(const JsonObjectConst& inputObject)
+      : InputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::FontSize)){
+        this->fontSize = inputObject[JsonKey::FontSize];
+      } else this->fontSize = DefaultValues::FontSize;
+      if(inputObject.containsKey(JsonKey::Text)){
+        this->text = inputObject[JsonKey::Text].as<String>();
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::TextColor)){
+        this->textColor = inputObject[JsonKey::TextColor].as<String>();
+      } else this->textColor = DefaultValues::TextColor;
+      this->value = false;
+    }
+
+    JsonObject toVisuinoJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      outputObj[JsonKey::Name] = this->name;
+      outputObj[JsonKey::Value] = this->value;
+      return outputObj;
+    }
+
+    JsonObject toWebsiteJson() override {
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::TextColor] = this->textColor;
+      websiteObj[JsonKey::Text] = this->text;
+      websiteObj[JsonKey::FontSize] = this->fontSize;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Input::Button;
+      return websiteObj;
+    }
+    void setState(const JsonObjectConst& object) override {
+      if(object.containsKey(JsonKey::Value))
+        this->value = object[JsonKey::Value];
+    }
+
+    static void setVisuinoOutput(const JsonObjectConst& obj) {
+      str.clear();
+      serializeJson(obj, str);
+      isDataReady = true;
+    }
+
+    static const String& getVisuinoOutput() {return str;}
+    static bool isDataReady;
+
+
+  private:
+    static String str;
+    bool value;
+    uint16_t width;
+    uint16_t height;
+    uint16_t fontSize;
+    String text;
+    String color;
+    String textColor;
+  };
+  String Button::str;
+  bool Button::isDataReady;
+
+
   class Label : public OutputComponent {
   public:
     explicit Label(const JsonObjectConst& inputObject)
@@ -558,7 +637,10 @@ namespace Website {
       parseOutputComponentToWebsite<NumberInput>(object);
     } else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
       parseOutputComponentToWebsite<Slider>(object);
-    } else if(!strncmp(componentType, Output::Label, strlen(componentType))){
+    } else if(!strncmp(componentType, Input::Button, strlen(componentType))){
+      parseOutputComponentToWebsite<Button>(object);
+    }
+    else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
       parseOutputComponentToWebsite<Gauge>(object);
@@ -594,6 +676,8 @@ namespace Website {
       return parseInputComponentToVisuino<Slider>(receivedJson);
     } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))){
       return parseInputComponentToVisuino<NumberInput>(receivedJson);
+    } else if(!strncmp(componentType, Input::Button, strlen(componentType))){
+      return parseInputComponentToVisuino<Button>(receivedJson);
     }
     return false;
   }
@@ -807,7 +891,20 @@ const String testWebsiteConfigStr = {R"(
         "componentType": "numberInput",
         "posY": 200,
         "posX": 400
-    }
+    },
+    {
+        "name": "btn",
+        "componentType": "button",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Click me",
+        "width": 200,
+        "height": 40,
+        "color": "#444",
+        "posX": 500,
+        "posY": 80,
+        "desktopScale": 2
+      }
   ]
 
 })"};
@@ -988,6 +1085,10 @@ namespace JsonWriter{
     if(NumberInput::isDataReady) {
       Serial.println(NumberInput::getVisuinoOutput());
       NumberInput::isDataReady = false;
+    }
+    if(Button::isDataReady){
+      Serial.println(Button::getVisuinoOutput());
+      Button::isDataReady = false;
     }
   }
 }
