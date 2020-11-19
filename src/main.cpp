@@ -254,7 +254,6 @@ namespace Website {
       isDataReady = true;
     }
     static const String& getVisuinoOutput() {return str;}
-    static void clearStr() {str.clear();}
     static bool isDataReady;
   private:
     static String str;
@@ -326,7 +325,6 @@ namespace Website {
       isDataReady = true;
     }
     static const String& getVisuinoOutput() {return str;}
-    static void clearStr() {str.clear();}
     static bool isDataReady;
   private:
     static String str;
@@ -393,7 +391,6 @@ namespace Website {
       isDataReady = true;
     }
     static const String& getVisuinoOutput() {return str;}
-    static void clearStr() {str.clear();}
     static bool isDataReady;
 
   private:
@@ -465,7 +462,6 @@ namespace Website {
     }
 
     static const String& getVisuinoOutput() {return str;}
-    static void clearStr() {str.clear();}
     static bool isDataReady;
 
 
