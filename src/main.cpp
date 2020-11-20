@@ -634,11 +634,11 @@ namespace Website {
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponentToWebsite<Switch>(object);
     } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
-      parseOutputComponentToWebsite<NumberInput>(object);
+      parseInputComponentToWebsite<NumberInput>(object);
     } else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
-      parseOutputComponentToWebsite<Slider>(object);
+      parseInputComponentToWebsite<Slider>(object);
     } else if(!strncmp(componentType, Input::Button, strlen(componentType))){
-      parseOutputComponentToWebsite<Button>(object);
+      parseInputComponentToWebsite<Button>(object);
     }
     else if(!strncmp(componentType, Output::Label, strlen(componentType))){
       parseOutputComponentToWebsite<Label>(object);
@@ -762,7 +762,7 @@ namespace Website {
 
 const String wrongWebsiteStr = {R"(gugugwno)"};
 
-const String testWebsiteConfigStr = {R"(
+String testWebsiteConfigStr = {R"(
 {
   "elements" : [
       {
@@ -830,12 +830,29 @@ const String testWebsiteConfigStr = {R"(
         "value": true
       },
       {
+        "name" : "bulb2",
+        "size" : "small",
+        "componentType" : "switch",
+        "posX" : 10,
+        "posY" : 100,
+        "color" : "red",
+        "value": false
+      },
+      {
         "name" : "Info",
         "componentType" : "label",
         "posX" : 200,
         "posY" : 350,
         "color" : "#ff2233",
         "value": "Siema wam wszystkim"
+      },
+      {
+        "name" : "Info2",
+        "componentType" : "label",
+        "posX" : 200,
+        "posY" : 4000,
+        "color" : "#ff2233",
+        "value": "Jak tam"
       },
       {
         "name" : "Switch Info",
@@ -893,18 +910,28 @@ const String testWebsiteConfigStr = {R"(
         "posX": 400
     },
     {
-        "name": "btn",
-        "componentType": "button",
-        "textColor": "white",
+        "name": "other temperatureeee",
+        "color": "blue",
         "fontSize": 16,
-        "text": "Click me",
-        "width": 200,
-        "height": 40,
-        "color": "#444",
-        "posX": 500,
-        "posY": 80,
-        "desktopScale": 2
-      }
+        "width": 150,
+        "value": 41.2,
+        "desktopScale": 2,
+        "componentType": "numberInput",
+        "posY": 300,
+        "posX": 450
+      },
+     {
+      "name": "btn",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Click me",
+      "width": 200,
+      "height": 40,
+      "color": "#444",
+      "posX": 500,
+      "posY": 80,
+      "componentType": "button",
+    }
   ]
 
 })"};
@@ -941,6 +968,11 @@ namespace JsonReader {
     }
     return biggest;
   }
+  
+  size_t getBufferSize(size_t memoryUsage){
+    size_t newSize = memoryUsage + (memoryUsage / 10);
+    return newSize;
+  }
 
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
     static bool isValid = false;
@@ -950,7 +982,8 @@ namespace JsonReader {
     if (isValid) {
       if (!isInitialized) {
         memorySize = json.length();
-        inputJsonMemory =  new DynamicJsonDocument(memorySize * 2);
+        Serial.println((int)memorySize);
+        inputJsonMemory =  new DynamicJsonDocument(getBufferSize(memorySize));
         if (inputJsonMemory->capacity() != 0) {
           Website::Card::setJsonMemory(inputJsonMemory);
           isInitialized = true;
@@ -968,7 +1001,8 @@ namespace JsonReader {
       if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
       if(!isElementsInitialized) {
         size_t biggestObjectSize = getBiggestObjectSize(elements);
-        componentJsonMemory = new DynamicJsonDocument(biggestObjectSize * 2);
+        Serial.println((int)biggestObjectSize);
+        componentJsonMemory = new DynamicJsonDocument(getBufferSize(biggestObjectSize));
         if(componentJsonMemory->capacity() != 0){
           Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
           isElementsInitialized = true;
@@ -1160,7 +1194,6 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
-
     card.onComponentStatusHTTPRequest(data, len);
     request->send(HTTP_STATUS_OK);
   });
@@ -1196,6 +1229,7 @@ void setup(){
   using namespace WebsiteServer;
   using namespace WebsiteServer::JsonReader;
   InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
+  WebsiteServer::testWebsiteConfigStr.clear();
   const char* msg = errorHandler(status);
   if(status != InputJsonStatus::OK) Log::error(msg);
   uint32 after = millis();
