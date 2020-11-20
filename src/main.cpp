@@ -7,8 +7,7 @@
 
 #include <ArduinoJson.h>
 #include <StreamString.h>
-
-
+#include <Ticker.h>
 
 
 namespace WebsiteServer{
@@ -420,6 +419,9 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::Text)){
         this->text = inputObject[JsonKey::Text].as<String>();
       } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::TextColor)){
         this->textColor = inputObject[JsonKey::TextColor].as<String>();
       } else this->textColor = DefaultValues::TextColor;
@@ -969,7 +971,7 @@ namespace JsonReader {
   }
   
   size_t getBufferSize(size_t memoryUsage){
-    size_t newSize = memoryUsage + (memoryUsage / 10);
+    size_t newSize = memoryUsage + (memoryUsage / 2);
     return newSize;
   }
 
@@ -1156,20 +1158,8 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
     request->send(SPIFFS, "/component.js","application/javascript");
   });
 
-  webServer.on("/Libs/switch.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/switch.js","application/javascript");
-  });
-
-  webServer.on("/Libs/switch.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/switch.css","text/css");
-  });
-
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
-  });
-
-  webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/renderer.js","application/javascript");
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1213,9 +1203,7 @@ void WiFiInit(){
 }
 }
 
-
 void setup(){
-
   Serial.begin(9600);
   if(!SPIFFS.begin()){
     Serial.println("An Error has occurred while mounting SPIFFS");
@@ -1242,5 +1230,6 @@ void setup(){
 
 void loop(){
   WebsiteServer::JsonWriter::write();
+
 }
 
