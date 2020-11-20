@@ -213,9 +213,8 @@ namespace Website {
         this->value = DefaultValues::BooleanValue;
       }
       if(inputObject.containsKey(JsonKey::SwitchSize)){
-        this->size = inputObject[JsonKey::SwitchSize].as<String>();
-      } else this->size = DefaultValues::SwitchSize;
-
+        this->size = inputObject[JsonKey::SwitchSize];
+      } else this->size = 5;
       if(inputObject.containsKey(JsonKey::Color)){
         this->color = inputObject[JsonKey::Color].as<String>();
       } else this->color = DefaultValues::Color;
@@ -259,7 +258,7 @@ namespace Website {
     static String str;
     bool value;
     String color;
-    String size;
+    uint16_t size;
   };
 
   String Switch::str;
@@ -767,7 +766,7 @@ String testWebsiteConfigStr = {R"(
   "elements" : [
       {
         "name" : "Lamp2",
-        "size" : "default",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 100,
         "posY" : 100,
@@ -776,7 +775,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Motor",
-        "size" : "large",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 400,
         "posY" : 400,
@@ -785,7 +784,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Nothing",
-        "size" : "large",
+        "size" : 25,
         "componentType" : "switch",
         "posX" : 170,
         "posY" : 100,
@@ -794,7 +793,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Something",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 50,
         "posY" : 150,
@@ -803,7 +802,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Servo",
-        "size" : "large",
+        "size" : 20,
         "componentType" : "switch",
         "dataType" : "boolean",
         "posX" : 170,
@@ -813,7 +812,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "LightBulb",
-        "size" : "default",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 100,
         "posY" : 150,
@@ -822,7 +821,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "bulb",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 50,
         "posY" : 100,
@@ -831,7 +830,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "bulb2",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 10,
         "posY" : 100,
@@ -1189,6 +1188,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
     fullCorsAllow(response);
+    Log::memoryInfo(Serial);
     request->send(response);
   });
 
