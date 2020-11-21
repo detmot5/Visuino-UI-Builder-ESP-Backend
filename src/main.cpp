@@ -3,11 +3,9 @@
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
 #include <vector>
-#include <sstream>
 
 #include <ArduinoJson.h>
 #include <StreamString.h>
-#include <Ticker.h>
 
 
 namespace WebsiteServer{
@@ -36,6 +34,7 @@ const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
   const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
@@ -85,7 +84,7 @@ namespace JsonKey {
   const char* Text PROGMEM = "text";
   const char* TextColor PROGMEM = "textColor";
 
-  const char* SwitchSize PROGMEM = "size";
+  const char* Size PROGMEM = "size";
 
   const char* MaxValue PROGMEM = "maxValue";
   const char* MinValue PROGMEM = "minValue";
@@ -139,8 +138,6 @@ namespace Website {
     bool initializedOK;
     uint16_t posX;
     uint16_t posY;
-    // TODO: implement it
-    uint8_t desktopScale;
     String name;
     String dataType;
   };
@@ -211,9 +208,9 @@ namespace Website {
         Serial.println("Value not found");
         this->value = DefaultValues::BooleanValue;
       }
-      if(inputObject.containsKey(JsonKey::SwitchSize)){
-        this->size = inputObject[JsonKey::SwitchSize];
-      } else this->size = 5;
+      if(inputObject.containsKey(JsonKey::Size)){
+        this->size = inputObject[JsonKey::Size];
+      } else this->size = 10;
       if(inputObject.containsKey(JsonKey::Color)){
         this->color = inputObject[JsonKey::Color].as<String>();
       } else this->color = DefaultValues::Color;
@@ -235,7 +232,7 @@ namespace Website {
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::Color] = this->color;
-      websiteObj[JsonKey::SwitchSize] = this->size;
+      websiteObj[JsonKey::Size] = this->size;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
     }
@@ -574,7 +571,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst &object) override{
+    void setState(const JsonObjectConst& object) override{
       if(object.containsKey(JsonKey::Value)){
         this->value = object[JsonKey::Value];
       } else this->value = 0;
@@ -592,6 +589,48 @@ namespace Website {
     String color;
   };
 
+  class LedIndicator : public OutputComponent {
+  public:
+    explicit LedIndicator(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = DefaultValues::BooleanValue;
+      if(inputObject.containsKey(JsonKey::Size)){
+        this->size = inputObject[JsonKey::Size];
+      } else this->size = 10;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::LedColor;
+    }
+
+    JsonObject toWebsiteJson() override{
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::Size] = this->size;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Indicator;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+
+  private:
+    bool value;
+    uint16_t size;
+    String color;
+  };
 
   class Card {
   public:
@@ -600,7 +639,6 @@ namespace Website {
     enum class ComponentStatus : uint8_t{
       OK,
       OBJECT_NOT_VALID,
-      UNKNOWN_NAME,
     };
 
     static void setJsonMemory(DynamicJsonDocument* mem);
@@ -609,7 +647,6 @@ namespace Website {
     bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
     void reserve(size_t size);
     void garbageCollect();
-    const std::vector<WebsiteComponent*>& getComponents() const {return components;}
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
@@ -645,7 +682,12 @@ namespace Website {
       parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
       parseOutputComponentToWebsite<Gauge>(object);
-    } else {
+    } else if(!strncmp(componentType, Output::Indicator, strlen(componentType))){
+      bool res = parseOutputComponentToWebsite<LedIndicator>(object);
+      if(!res) Serial.println("problem here");
+    }
+
+    else {
       return ComponentStatus::OBJECT_NOT_VALID;
     }
     return ComponentStatus::OK;
@@ -726,7 +768,8 @@ namespace Website {
       }
     } else {
       auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
-      component->setState(object);
+      if(component != nullptr) component->setState(object);
+      else return false;
     }
     return true;
   }
@@ -761,7 +804,7 @@ namespace Website {
 
 
 
-const String wrongWebsiteStr = {R"(gugugwno)"};
+//const  String wrongWebsiteStr = {R"(gugugwno)"};
 
 String testWebsiteConfigStr = {R"(
 {
@@ -931,7 +974,15 @@ String testWebsiteConfigStr = {R"(
       "color": "#444",
       "posX": 500,
       "posY": 80,
-      "componentType": "button",
+      "componentType": "button"
+    },
+    {
+      "name": "led",
+      "componentType": "indicator",
+      "value": true,
+      "posY": 100,
+      "posX": 900,
+      "size": 30
     }
   ]
 
@@ -999,6 +1050,7 @@ namespace JsonReader {
       JsonObject inputObject = inputJsonMemory->as<JsonObject>();
       if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
       JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
+      Serial.println((int)elements.size());
       if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
       if(!isElementsInitialized) {
         size_t biggestObjectSize = getBiggestObjectSize(elements);
