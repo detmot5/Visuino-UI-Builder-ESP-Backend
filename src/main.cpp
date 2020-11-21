@@ -26,9 +26,9 @@ const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Ty
 
 
 const uint16_t HTTP_STATUS_OK PROGMEM = 200;
+const uint16_t HTTP_STATUS_OK_NO_CONTENT = 204;
 const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
 const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
-
 
 
 
@@ -647,16 +647,18 @@ namespace Website {
     bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
     void reserve(size_t size);
     void garbageCollect();
+    const String& getTitle() const {return this->title;}
+    void setTitle(const String& nTitle) {this->title = nTitle;}
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
     template<typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
-    static DynamicJsonDocument* jsonMemory;
-    static bool isMemoryInitialized;
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
+    static DynamicJsonDocument* jsonMemory;
+    static bool isMemoryInitialized;
     std::vector<WebsiteComponent*> components;
-
+    String title;
   };
 
   DynamicJsonDocument* Card::jsonMemory = nullptr;
@@ -1222,10 +1224,11 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK);
-    request->send(response);
+    const String& title = card.getTitle();
+    if (!title.isEmpty() || title.equals("")){
+      request->send(HTTP_STATUS_OK, "text/plain", title);
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
-
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
@@ -1236,8 +1239,12 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
-    card.onComponentStatusHTTPRequest(data, len);
-    request->send(HTTP_STATUS_OK);
+    if(card.onComponentStatusHTTPRequest(data, len)){
+      request->send(HTTP_STATUS_OK);
+    } else {
+      Log::error("Error while parsing input component");
+      request->send(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    }
   });
 }
 
