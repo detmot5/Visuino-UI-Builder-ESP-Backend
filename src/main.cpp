@@ -672,6 +672,8 @@ namespace Website {
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::MaxValue] = this->maxValue;
       websiteObj[JsonKey::MinValue] = this->minValue;
@@ -698,6 +700,46 @@ namespace Website {
     uint16_t height;
     bool isVertical;
   };
+
+  class ColorField : public OutputComponent{
+  public:
+    explicit ColorField(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = DefaultValues::Width;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = DefaultValues::Height;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
+    }
+
+
+    JsonObject toWebsiteJson() override{
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
+      return websiteObj;
+    }
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+  private:
+    uint16_t width;
+    uint16_t height;
+    String color;
+  };
+
 
 
   class Card {
@@ -758,6 +800,8 @@ namespace Website {
       parseOutputComponentToWebsite<LedIndicator>(object);
     } else if(!strncmp(componentType, Output::ProgressBar, strlen(componentType))){
       parseOutputComponentToWebsite<ProgressBar>(object);
+    } else if(!strncmp(componentType, Output::Field, strlen(componentType))){
+      parseOutputComponentToWebsite<ColorField>(object);
     }
 
     else {
@@ -1031,7 +1075,7 @@ String testWebsiteConfigStr = {R"(
       "componentType" : "progressBar",
       "posX" : 700,
       "posY" : 350,
-      "color" : "#cc0000",
+      "color" : "orangered",
       "value": 700,
       "maxValue": 800,
       "minValue": 0,
@@ -1064,6 +1108,27 @@ String testWebsiteConfigStr = {R"(
       "posY": 700,
       "isVertical": true,
       "componentType": "button"
+    },
+    {
+      "name": "btn",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Vertical",
+      "width": 200,
+      "height": 40,
+      "color": "blue",
+      "posX": 1000,
+      "posY": 700,
+      "componentType": "button"
+    },
+    {
+      "name": "controls",
+      "color": "lime",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 50,
+      "posX": 0
     }
   ]
 })"};
