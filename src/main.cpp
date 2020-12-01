@@ -7,21 +7,18 @@
 #include <WiFi.h>
 #include <SPIFFS.h>
 #endif
-
 #include <ESPAsyncWebServer.h>
+#include <StreamString.h>
 #include <vector>
 
 #include <ArduinoJson.h>
-#include <StreamString.h>
 
 
 namespace WebsiteServer{
   
 AsyncWebServer server(80);
 
-
-
-const char* ssid     = "ESP8266-Access-Point";
+const char* ssid     = "ESP-Access-Point";
 const char* password = "123456789";
 
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
