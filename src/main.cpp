@@ -422,6 +422,9 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::TextColor)){
         this->textColor = inputObject[JsonKey::TextColor].as<String>();
       } else this->textColor = DefaultValues::TextColor;
+      if(inputObject.containsKey(JsonKey::IsVertical)){
+        this->isVertical = inputObject[JsonKey::IsVertical];
+      } else this->isVertical = DefaultValues::IsVertical;
       this->value = false;
     }
 
@@ -445,6 +448,7 @@ namespace Website {
       websiteObj[JsonKey::TextColor] = this->textColor;
       websiteObj[JsonKey::Text] = this->text;
       websiteObj[JsonKey::FontSize] = this->fontSize;
+      websiteObj[JsonKey::IsVertical] = this->isVertical;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Button;
       return websiteObj;
     }
@@ -472,6 +476,7 @@ namespace Website {
     String text;
     String color;
     String textColor;
+    bool isVertical;
   };
   String Button::str;
   bool Button::isDataReady;
@@ -693,7 +698,6 @@ namespace Website {
     uint16_t height;
     bool isVertical;
   };
-
 
 
   class Card {
@@ -1047,6 +1051,19 @@ String testWebsiteConfigStr = {R"(
       "width" : 250,
       "height": 20,
       "isVertical": false
+    },
+    {
+      "name": "btn2",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Horizontal",
+      "width": 40,
+      "height": 200,
+      "color": "darkorange",
+      "posX": 1400,
+      "posY": 700,
+      "isVertical": true,
+      "componentType": "button"
     }
   ]
 })"};
