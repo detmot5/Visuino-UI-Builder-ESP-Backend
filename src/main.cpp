@@ -34,20 +34,23 @@ const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const char* Color2 PROGMEM = "lime";
   const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
   const char* SwitchSize PROGMEM = "default";
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
   const uint16_t Height PROGMEM = 100;
+  const uint16_t SliderHeight PROGMEM = 20;
+  const uint16_t BarHeight PROGMEM = 20;
   const bool BooleanValue PROGMEM = false;
+  const bool IsVertical PROGMEM = false;
 }
 
 namespace ComponentType {
   namespace Input {
     const char* Switch PROGMEM = "switch";
     const char* Slider PROGMEM = "slider";
-    const char* CheckBox PROGMEM = "checkbox";
     const char* NumberInput PROGMEM = "numberInput";
     const char* Button PROGMEM = "button";
   }
@@ -56,6 +59,8 @@ namespace ComponentType {
     const char* Indicator PROGMEM = "indicator";
     const char* Chart PROGMEM = "chart";
     const char* Gauge PROGMEM = "gauge";
+    const char* ProgressBar PROGMEM = "progressBar";
+    const char* Field PROGMEM = "field";
   }
 }
 
@@ -83,7 +88,7 @@ namespace JsonKey {
   const char* FontSize PROGMEM = "fontSize";
   const char* Text PROGMEM = "text";
   const char* TextColor PROGMEM = "textColor";
-
+  const char* IsVertical PROGMEM = "isVertical";
   const char* Size PROGMEM = "size";
 
   const char* MaxValue PROGMEM = "maxValue";
@@ -109,6 +114,7 @@ namespace ErrorMessage{
     const char* ObjectNotValid PROGMEM = "Json Input - Object is not valid";
     const char* NameNotFound PROGMEM = "Json Input - Object name is not found";
     const char* InvalidInput PROGMEM = "Json Input - Invalid input";
+    const char* ComponentTypeNotFound = "Json Input - componentType not found";
     const char* OK PROGMEM = "Json Input - Ok";
   }
 }
@@ -139,7 +145,6 @@ namespace Website {
     uint16_t posX;
     uint16_t posY;
     String name;
-    String dataType;
   };
   DynamicJsonDocument* WebsiteComponent::jsonMemory = nullptr;
   bool WebsiteComponent::memoryInitialized = false;
@@ -211,9 +216,6 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::Size)){
         this->size = inputObject[JsonKey::Size];
       } else this->size = 10;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
-      } else this->color = DefaultValues::Color;
     }
 
     JsonObject toVisuinoJson() override {
@@ -231,7 +233,6 @@ namespace Website {
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
-      websiteObj[JsonKey::Color] = this->color;
       websiteObj[JsonKey::Size] = this->size;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
@@ -253,7 +254,6 @@ namespace Website {
   private:
     static String str;
     bool value;
-    String color;
     uint16_t size;
   };
 
@@ -632,6 +632,70 @@ namespace Website {
     String color;
   };
 
+
+  class ProgressBar : public OutputComponent{
+  public:
+    explicit ProgressBar(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::MinValue)){
+        this->minValue = inputObject[JsonKey::MinValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::MaxValue)){
+        this->maxValue = inputObject[JsonKey::MaxValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color2;
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = DefaultValues::Width;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = DefaultValues::BarHeight;
+      if(inputObject.containsKey(JsonKey::IsVertical)){
+        this->isVertical = inputObject[JsonKey::IsVertical];
+      } else this->isVertical = DefaultValues::IsVertical;
+    }
+
+
+    JsonObject toWebsiteJson() override{
+      if(!isMemoryInitialized()) return {};
+      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::MaxValue] = this->maxValue;
+      websiteObj[JsonKey::MinValue] = this->minValue;
+      websiteObj[JsonKey::IsVertical] = this->isVertical;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::ProgressBar;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+  private:
+    String color;
+    uint16_t maxValue;
+    uint16_t minValue;
+    uint16_t value;
+    uint16_t width;
+    uint16_t height;
+    bool isVertical;
+  };
+
+
+
   class Card {
   public:
     Card() = default;
@@ -639,6 +703,7 @@ namespace Website {
     enum class ComponentStatus : uint8_t{
       OK,
       OBJECT_NOT_VALID,
+      COMPONENT_TYPE_NOT_FOUND,
     };
 
     static void setJsonMemory(DynamicJsonDocument* mem);
@@ -669,6 +734,7 @@ namespace Website {
   Card::ComponentStatus Card::add(const JsonObjectConst& object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
     const char* componentType = object[JsonKey::ComponentType];
+    if(strlen(componentType) < 1) return ComponentStatus::COMPONENT_TYPE_NOT_FOUND;
     using namespace ComponentType;
 
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
@@ -685,8 +751,9 @@ namespace Website {
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
       parseOutputComponentToWebsite<Gauge>(object);
     } else if(!strncmp(componentType, Output::Indicator, strlen(componentType))){
-      bool res = parseOutputComponentToWebsite<LedIndicator>(object);
-      if(!res) Serial.println("problem here");
+      parseOutputComponentToWebsite<LedIndicator>(object);
+    } else if(!strncmp(componentType, Output::ProgressBar, strlen(componentType))){
+      parseOutputComponentToWebsite<ProgressBar>(object);
     }
 
     else {
@@ -956,38 +1023,32 @@ String testWebsiteConfigStr = {R"(
         "posX": 400
     },
     {
-        "name": "other temperatureeee",
-        "color": "blue",
-        "fontSize": 16,
-        "width": 150,
-        "value": 41.2,
-        "desktopScale": 2,
-        "componentType": "numberInput",
-        "posY": 300,
-        "posX": 450
-      },
-     {
-      "name": "btn",
-      "textColor": "white",
-      "fontSize": 16,
-      "text": "Click me",
-      "width": 200,
-      "height": 40,
-      "color": "#444",
-      "posX": 500,
-      "posY": 80,
-      "componentType": "button"
+      "name" : "progress-bar",
+      "componentType" : "progressBar",
+      "posX" : 700,
+      "posY" : 350,
+      "color" : "#cc0000",
+      "value": 700,
+      "maxValue": 800,
+      "minValue": 0,
+      "width" : 250,
+      "height": 20,
+      "isVertical": true
     },
     {
-      "name": "led",
-      "componentType": "indicator",
-      "value": true,
-      "posY": 100,
-      "posX": 900,
-      "size": 30
+      "name" : "progress-bar2",
+      "componentType" : "progressBar",
+      "posX" : 700,
+      "posY" : 700,
+      "color" : "lime",
+      "value": 700,
+      "maxValue": 800,
+      "minValue": 0,
+      "width" : 250,
+      "height": 20,
+      "isVertical": false
     }
   ]
-
 })"};
 
 
@@ -1008,6 +1069,7 @@ namespace JsonReader {
     ELEMENTS_ARRAY_EMPTY,
     OBJECT_NOT_VALID,
     NAME_NOT_FOUND,
+    COMPONENT_TYPE_NOT_FOUND,
   };
 
   bool validateJson(const String& json){
@@ -1069,7 +1131,11 @@ namespace JsonReader {
 
       card.reserve(elements.size());
       for (JsonObject element : elements) {
-        if (card.add(element) != Website::Card::ComponentStatus::OK) {
+        auto res = card.add(element);
+        if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
+          return InputJsonStatus::COMPONENT_TYPE_NOT_FOUND;
+        }
+        else if (res != Website::Card::ComponentStatus::OK) {
           return InputJsonStatus::OBJECT_NOT_VALID;
         }
       }
@@ -1109,6 +1175,9 @@ namespace JsonReader {
         break;
       case InputJsonStatus::OK:
         statusStr = ErrorMessage::JsonInput::OK;
+        break;
+      case InputJsonStatus::COMPONENT_TYPE_NOT_FOUND:
+        statusStr = ComponentTypeNotFound;
         break;
     }
     return statusStr;
