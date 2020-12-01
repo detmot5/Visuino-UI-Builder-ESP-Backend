@@ -1,7 +1,12 @@
 #include <Arduino.h>
+#ifdef ESP8266
 #include <ESP8266WiFi.h>
+#elif defined(ESP32)
+#include <WiFi.h>
+#endif
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
+#include <SPIFFS.h>
 #include <vector>
 
 #include <ArduinoJson.h>
@@ -1278,14 +1283,16 @@ namespace JsonReader {
 
     void memoryInfo(Stream& stream = errorStream) {
       stream.println(MemStats);
+#ifdef ESP8266
       stream.print(HeapFragmentationMsg);
       stream.println(ESP.getHeapFragmentation());
-
+#endif
       stream.print(FreeHeapMsg);
       stream.println(ESP.getFreeHeap());
-
+#ifdef ESP8266
       stream.print(MaxFreeHeapBlock);
       stream.println(ESP.getMaxFreeBlockSize());
+#endif
       isDataReady = true;
     }
 
@@ -1430,7 +1437,7 @@ void setup(){
   WebsiteServer::testWebsiteConfigStr.clear();
   const char* msg = errorHandler(status);
   if(status != InputJsonStatus::OK) Log::error(msg);
-  uint32 after = millis();
+  uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
   WebsiteServer::Log::error("error test", Serial);
