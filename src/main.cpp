@@ -1,12 +1,14 @@
 #include <Arduino.h>
 #ifdef ESP8266
 #include <ESP8266WiFi.h>
-#elif defined(ESP32)
-#include <WiFi.h>
-#endif
-#include <ESPAsyncWebServer.h>
 #include <FS.h>
+#endif
+#ifdef ESP32
+#include <WiFi.h>
 #include <SPIFFS.h>
+#endif
+
+#include <ESPAsyncWebServer.h>
 #include <vector>
 
 #include <ArduinoJson.h>
@@ -1128,12 +1130,21 @@ String testWebsiteConfigStr = {R"(
     },
     {
       "name": "controls",
-      "color": "lime",
+      "color": "darkorange",
       "width": 800,
       "height" : 400,
       "componentType": "field",
       "posY": 50,
       "posX": 0
+    },
+    {
+      "name": "controls2",
+      "color": "darkorange",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 50,
+      "posX": 800
     }
   ]
 })"};
@@ -1282,28 +1293,39 @@ namespace JsonReader {
     const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
 
     void memoryInfo(Stream& stream = errorStream) {
-      stream.println(MemStats);
 #ifdef ESP8266
-      stream.print(HeapFragmentationMsg);
+      stream.println(MemStats);
+
+      stream.print(HeapFragmentationMsg);;
       stream.println(ESP.getHeapFragmentation());
-#endif
+
       stream.print(FreeHeapMsg);
       stream.println(ESP.getFreeHeap());
-#ifdef ESP8266
+
       stream.print(MaxFreeHeapBlock);
       stream.println(ESP.getMaxFreeBlockSize());
 #endif
+#ifdef ESP32
+      stream.println(MemStats);
+
+      stream.print(FreeHeapMsg);
+      stream.println(ESP.getFreeHeap());
+
+      stream.print(MaxFreeHeapBlock);
+      stream.print(ESP.getMaxAllocHeap());
+#endif
       isDataReady = true;
     }
-
     void info (const char* msg, Stream& stream = errorStream) {
       stream.print(InfoHeader);
-      stream.print(msg);
+      stream.print(" ");
+      stream.println(msg);
       isDataReady = true;
     }
 
     void error (const char* msg, Stream& stream = errorStream) {
       stream.print(ErrorHeader);
+      stream.print(" ");
       stream.println(msg);
       memoryInfo(stream);
       isDataReady = true;
@@ -1368,10 +1390,14 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 
   webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/component.js","application/javascript");
+    Log::info("Component", Serial);
+    Log::memoryInfo(Serial);
   });
 
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
+    Log::info("Knob", Serial);
+    Log::memoryInfo(Serial);
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1391,7 +1417,6 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
     AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
     fullCorsAllow(response);
-    Log::memoryInfo(Serial);
     request->send(response);
   });
 
