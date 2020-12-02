@@ -13,6 +13,7 @@
 
 #include <ArduinoJson.h>
 
+#define DEBUG_BUILD 1
 
 namespace WebsiteServer{
   
@@ -38,10 +39,11 @@ const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
-  const char* Color2 PROGMEM = "lime";
+  const char* Color2 PROGMEM = "darkorange";
   const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
-  const char* SwitchSize PROGMEM = "default";
+  const char* FieldOutlineColor = "black";
+
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
   const uint16_t Height PROGMEM = 100;
@@ -68,13 +70,7 @@ namespace ComponentType {
   }
 }
 
-namespace DataType{
-  const char* Boolean PROGMEM = "boolean";
-  const char* Number PROGMEM = "number";
-  const char* Str PROGMEM = "string";
-}
-
-
+// DO NOT MODIFY!
 namespace JsonKey {
   const char* Title PROGMEM = "title";
   const char* Body PROGMEM = "body";
@@ -94,6 +90,7 @@ namespace JsonKey {
   const char* TextColor PROGMEM = "textColor";
   const char* IsVertical PROGMEM = "isVertical";
   const char* Size PROGMEM = "size";
+  const char* FieldOutlineColor PROGMEM = "outlineColor";
 
   const char* MaxValue PROGMEM = "maxValue";
   const char* MinValue PROGMEM = "minValue";
@@ -538,12 +535,6 @@ namespace Website {
   public:
     explicit Gauge(const JsonObjectConst& inputObject)
       : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Value)){
-        this->value = inputObject[JsonKey::Value];
-      } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
-      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::MaxValue)){
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else {
@@ -556,6 +547,12 @@ namespace Website {
         this->maxValue = 0;
         initializedOK = false;
       }
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
@@ -699,7 +696,7 @@ namespace Website {
     String color;
     uint16_t maxValue;
     uint16_t minValue;
-    uint16_t value;
+    float value;
     uint16_t width;
     uint16_t height;
     bool isVertical;
@@ -718,6 +715,9 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::Color)){
         this->color = inputObject[JsonKey::Color].as<String>();
       } else this->color = DefaultValues::Color;
+      if(inputObject.containsKey(JsonKey::FieldOutlineColor)){
+        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<String>();
+      } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
 
 
@@ -730,6 +730,7 @@ namespace Website {
       websiteObj[JsonKey::Width] = this->width;
       websiteObj[JsonKey::Height] = this->height;
       websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::FieldOutlineColor] = this->outlineColor;
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
       return websiteObj;
     }
@@ -742,6 +743,7 @@ namespace Website {
     uint16_t width;
     uint16_t height;
     String color;
+    String outlineColor;
   };
 
 
@@ -767,7 +769,7 @@ namespace Website {
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
-    template<typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
+    template <typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
     static DynamicJsonDocument* jsonMemory;
@@ -905,8 +907,7 @@ namespace Website {
         delete component;
         return false;
       }
-    } else return false;
-
+    }
     return true;
   }
 
@@ -1141,7 +1142,7 @@ String testWebsiteConfigStr = {R"(
       "height" : 400,
       "componentType": "field",
       "posY": 50,
-      "posX": 800
+      "posX": 800,
     }
   ]
 })"};
@@ -1174,14 +1175,14 @@ namespace JsonReader {
 
   size_t getBiggestObjectSize(const JsonArrayConst& arr){
     size_t biggest = 0;
-    for (const auto &item : arr) {
+    for (const auto& item : arr) {
       if(item.memoryUsage() > biggest) biggest = item.memoryUsage();
     }
     return biggest;
   }
   
   size_t getBufferSize(size_t memoryUsage){
-    size_t newSize = memoryUsage + (memoryUsage / 2);
+    size_t newSize = memoryUsage * 2;
     return newSize;
   }
 
@@ -1387,14 +1388,18 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 
   webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/component.js","application/javascript");
+#ifdef DEBUG_MODE
     Log::info("Component", Serial);
     Log::memoryInfo(Serial);
+#endif
   });
 
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
+#ifdef DEBUG_MODE
     Log::info("Knob", Serial);
     Log::memoryInfo(Serial);
+#endif
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1405,10 +1410,14 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
+#ifdef DEBUG_BUILD
+    request->send(HTTP_STATUS_OK, "text/plain", "Debug Build");
+#else
     const String& title = card.getTitle();
     if (!title.isEmpty() || title.equals("")){
       request->send(HTTP_STATUS_OK, "text/plain", title);
     } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+#endif
   });
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
