@@ -122,6 +122,22 @@ namespace ErrorMessage{
 
 
 namespace Website {
+  // Abstraction on Json Document which is common for few parts of app to make it thread safe
+  class CommonJsonMemory {
+  public:
+    void init(DynamicJsonDocument* doc){
+      this->mem = doc;
+      if(this->mem != nullptr) this->m_isInitialized = true;
+    }
+    void lock() {this->m_isLocked = true;}
+    void release() {this->m_isLocked = false;}
+    bool isReadyToUse() {return (!m_isLocked) && m_isInitialized;}
+    DynamicJsonDocument* get() {return this->mem;}
+  private:
+    DynamicJsonDocument* mem;
+    bool m_isLocked;
+    bool m_isInitialized;
+  };
 
   class WebsiteComponent {
   public:
@@ -719,7 +735,6 @@ namespace Website {
         this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<String>();
       } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
-
 
     JsonObject toWebsiteJson() override{
       if(!isMemoryInitialized()) return {};
