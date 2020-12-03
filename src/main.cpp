@@ -130,7 +130,8 @@ namespace Website {
       if(this->mem != nullptr) this->m_isInitialized = true;
     }
     void lock() {this->m_isLocked = true;}
-    void release() {this->m_isLocked = false;}
+    void unlock() {this->m_isLocked = false;}
+    void garbageCollect() {delete mem;}
     bool isReadyToUse() {return (!m_isLocked) && m_isInitialized;}
     DynamicJsonDocument* get() {return this->mem;}
   private:
@@ -773,7 +774,6 @@ namespace Website {
       COMPONENT_TYPE_NOT_FOUND,
     };
 
-    static void setJsonMemory(DynamicJsonDocument* mem);
     ComponentStatus add(const JsonObjectConst& object);
     JsonObject onHTTPRequest();
     bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
@@ -781,22 +781,22 @@ namespace Website {
     void garbageCollect();
     const String& getTitle() const {return this->title;}
     void setTitle(const String& nTitle) {this->title = nTitle;}
+    static void setJsonMemory(DynamicJsonDocument* mem);
+    static void lockJsonMemory();
+    static void releaseJsonMemory();
+    static bool isMemoryReadyToUse();
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
-    static DynamicJsonDocument* jsonMemory;
-    static bool isMemoryInitialized;
     std::vector<WebsiteComponent*> components;
     String title;
+    static CommonJsonMemory jsonMemory;
   };
 
-  DynamicJsonDocument* Card::jsonMemory = nullptr;
-  bool Card::isMemoryInitialized = false;
-
-
+  CommonJsonMemory Card::jsonMemory;
 
   Card::ComponentStatus Card::add(const JsonObjectConst& object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
@@ -832,23 +832,17 @@ namespace Website {
   }
 
   JsonObject Card::onHTTPRequest() {
-    if(isMemoryInitialized){
-      JsonObject object = jsonMemory->to<JsonObject>();
-      JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
-      for(auto component : this->components) {
-        elements.add(component->toWebsiteJson());
-      }
-      return object;
-    } else{
-      Serial.println("not initialized");
-      return {};
+    JsonObject object = jsonMemory.get()->to<JsonObject>();
+    JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
+    for(auto component : this->components) {
+      elements.add(component->toWebsiteJson());
     }
+    return object;
   }
 
   bool Card::onComponentStatusHTTPRequest(const uint8_t* data, size_t len){
-    if(!isMemoryInitialized) return false;
-    deserializeJson(*jsonMemory, reinterpret_cast<const char*>(data), len);
-    auto receivedJson = jsonMemory->as<JsonObject>();
+    deserializeJson(*jsonMemory.get(), reinterpret_cast<const char*>(data), len);
+    auto receivedJson = jsonMemory.get()->as<JsonObject>();
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
@@ -890,8 +884,7 @@ namespace Website {
   }
 
   void Card::setJsonMemory(DynamicJsonDocument *mem) {
-    jsonMemory = mem;
-    isMemoryInitialized = true;
+    jsonMemory.init(mem);
   }
 
   template<typename componentType>
@@ -934,6 +927,18 @@ namespace Website {
     component->setState(object);
     componentType::setVisuinoOutput(component->toVisuinoJson());
     return true;
+  }
+
+  void Card::lockJsonMemory() {
+    jsonMemory.lock();
+  }
+
+  void Card::releaseJsonMemory() {
+    jsonMemory.unlock();
+  }
+
+  bool Card::isMemoryReadyToUse() {
+    return jsonMemory.isReadyToUse();
   }
 
 }
@@ -1106,8 +1111,8 @@ String testWebsiteConfigStr = {R"(
     {
       "name" : "progress-bar2",
       "componentType" : "progressBar",
-      "posX" : 700,
-      "posY" : 700,
+      "posX" : 750,
+      "posY" : 600,
       "color" : "lime",
       "value": 700,
       "maxValue": 800,
@@ -1125,7 +1130,7 @@ String testWebsiteConfigStr = {R"(
       "height": 200,
       "color": "darkorange",
       "posX": 1400,
-      "posY": 700,
+      "posY": 500,
       "isVertical": true,
       "componentType": "button"
     },
@@ -1143,22 +1148,42 @@ String testWebsiteConfigStr = {R"(
     },
     {
       "name": "controls",
-      "color": "darkorange",
+      "color": "#bbb",
       "width": 800,
       "height" : 400,
       "componentType": "field",
-      "posY": 50,
+      "posY": 0,
       "posX": 0
     },
     {
       "name": "controls2",
-      "color": "darkorange",
+      "color": "#bbb",
       "width": 800,
       "height" : 400,
       "componentType": "field",
-      "posY": 50,
-      "posX": 800,
+      "posY": 0,
+      "posX": 800
+    },
+    {
+      "name": "controls3",
+      "color": "#ddd",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 400,
+      "posX": 0
+    },
+    {
+      "name": "controls4",
+      "color": "#ddd",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 400,
+      "posX": 800
     }
+
+
   ]
 })"};
 
@@ -1219,37 +1244,42 @@ namespace JsonReader {
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
-      deserializeJson(*inputJsonMemory, json);
-      if (inputJsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
 
-      JsonObject inputObject = inputJsonMemory->as<JsonObject>();
-      if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
-      JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
-      Serial.println((int)elements.size());
-      if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
-      if(!isElementsInitialized) {
-        size_t biggestObjectSize = getBiggestObjectSize(elements);
-        Serial.println((int)biggestObjectSize);
-        componentJsonMemory = new DynamicJsonDocument(getBufferSize(biggestObjectSize));
-        if(componentJsonMemory->capacity() != 0){
-          Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
-          isElementsInitialized = true;
-        } else {
-          delete componentJsonMemory;
-          return InputJsonStatus::ALLOC_ERROR;
+      if(Website::Card::isMemoryReadyToUse()){
+        Website::Card::lockJsonMemory();
+        deserializeJson(*inputJsonMemory, json);
+        if (inputJsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
+
+        JsonObject inputObject = inputJsonMemory->as<JsonObject>();
+        if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
+        JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
+        if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
+        if(!isElementsInitialized) {
+          size_t biggestObjectSize = getBiggestObjectSize(elements);
+          Serial.println((int)biggestObjectSize);
+          componentJsonMemory = new DynamicJsonDocument(getBufferSize(biggestObjectSize));
+          if(componentJsonMemory->capacity() != 0){
+            Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
+            isElementsInitialized = true;
+          } else {
+            delete componentJsonMemory;
+            return InputJsonStatus::ALLOC_ERROR;
+          }
         }
+
+        card.reserve(elements.size());
+        for (JsonObject element : elements) {
+          auto res = card.add(element);
+          if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
+            return InputJsonStatus::COMPONENT_TYPE_NOT_FOUND;
+          }
+          else if (res != Website::Card::ComponentStatus::OK) {
+            return InputJsonStatus::OBJECT_NOT_VALID;
+          }
+        }
+        Website::Card::releaseJsonMemory();
       }
 
-      card.reserve(elements.size());
-      for (JsonObject element : elements) {
-        auto res = card.add(element);
-        if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
-          return InputJsonStatus::COMPONENT_TYPE_NOT_FOUND;
-        }
-        else if (res != Website::Card::ComponentStatus::OK) {
-          return InputJsonStatus::OBJECT_NOT_VALID;
-        }
-      }
 
     } else return InputJsonStatus::INVALID_INPUT;
     return InputJsonStatus::OK;
@@ -1436,19 +1466,30 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   });
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
-    fullCorsAllow(response);
-    request->send(response);
+    using namespace Website;
+    if(Card::isMemoryReadyToUse()){
+      Card::lockJsonMemory();
+      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
+      fullCorsAllow(response);
+      request->send(response);
+      Card::releaseJsonMemory();
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
-    if(card.onComponentStatusHTTPRequest(data, len)){
-      request->send(HTTP_STATUS_OK);
-    } else {
-      Log::error("Error while parsing input component");
-      request->send(HTTP_STATUS_INTERNAL_SERVER_ERROR);
-    }
+    using namespace Website;
+
+    if(Card::isMemoryReadyToUse()){
+      Card::lockJsonMemory();
+      if(card.onComponentStatusHTTPRequest(data, len)){
+        request->send(HTTP_STATUS_OK);
+      } else {
+        Log::error("Error while parsing input component");
+        request->send(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+      }
+      Card::releaseJsonMemory();
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
 }
 
