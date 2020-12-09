@@ -23,8 +23,8 @@ namespace WebsiteServer{
   
 AsyncWebServer server(80);
 
-const char* ssid     = "ESP-Access-Point";
-const char* password = "123456789";
+
+const uint8_t CONNECT_ATTEMPTS_CNT = 10;
 
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS PROGMEM = "Access-Control-Allow-Methods";
@@ -85,7 +85,6 @@ namespace JsonKey {
   const char* Height PROGMEM = "height";
   const char* PosX PROGMEM = "posX";
   const char* PosY PROGMEM = "posY";
-  const char* DataType PROGMEM = "dataType";
   const char* ComponentType PROGMEM = "componentType";
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
@@ -157,6 +156,7 @@ namespace ErrorMessage{
       stream.print(MaxFreeHeapBlock);
       stream.print(ESP.getMaxAllocHeap());
 #endif
+      stream.println();
       isDataReady = true;
     }
     void info (const char* msg, Stream& stream = errorStream) {
@@ -174,6 +174,98 @@ namespace ErrorMessage{
       isDataReady = true;
     }
   }
+
+  namespace WiFiConfig {
+    String ssid;
+    bool isSsidInitialized = false;
+
+    String password;
+    bool isPasswordInitialized = false;
+
+    bool isAccessPoint;
+    bool isAccessPointInitialized = false;
+
+
+    inline bool isWiFiDataValid() {
+      return (isSsidInitialized && isPasswordInitialized && isAccessPointInitialized);
+    }
+
+    void setSsid(const String &nSsid) {
+      if (nSsid.length() > 0) {
+        ssid = nSsid;
+        isSsidInitialized = true;
+      }
+    }
+
+    void setPassword(const String &nPassword) {
+      if (nPassword.length() > 0) {
+        password = nPassword;
+        isPasswordInitialized = true;
+      }
+    }
+
+    void setIsAccessPoint(bool isAp) {
+      isAccessPoint = isAp;
+      isAccessPointInitialized = true;
+    }
+
+
+    bool setUpAP() {
+      bool res = true;
+      String msg;
+      msg.reserve(50);
+
+      Log::info("Setting up in Access Point mode...");
+
+      if(WiFi.softAP(ssid.c_str(), password.c_str())) {
+        msg += "Access Point ";
+        msg += ssid;
+        msg += " created ";
+        msg += "Website is available at: ";
+        msg += WiFi.softAPIP().toString().c_str();
+        Log::info(msg.c_str());
+      } else{
+        Log::error("Failed to set up Access Point");
+        res = false;
+      }
+
+      return res;
+    }
+
+    bool setUpSTA() {
+      uint8_t connectAttempts = 0;
+      bool res = true;
+      String msg;
+      msg.reserve(50);
+      Log::info("Setting up in Station mode...");
+      msg += "Connecting to ";
+      msg += ssid + "...";
+      Log::info(msg.c_str());
+      WiFi.begin(ssid.c_str(), password.c_str());
+      while(WiFi.status() != WL_CONNECTED){
+        connectAttempts++;
+        delay(100);
+        if(connectAttempts > CONNECT_ATTEMPTS_CNT){
+          Log::error("Cannot connect to WiFi, check your SSID and password");
+          return false;
+        }
+      }
+      msg.clear();
+      msg += "Connected";
+      msg += ", Website is available at: ";
+      msg += WiFi.localIP().toString();
+      Log::info(msg.c_str());
+      return res;
+    }
+    bool init() {
+      if(!isWiFiDataValid()) return false;
+      bool res;
+      if(isAccessPoint) res = setUpAP();
+      else res = setUpSTA();
+      return res;
+    }
+  }
+
 
 
 // Abstraction on Json Document which is common for few parts of app to make it thread safe
@@ -206,7 +298,6 @@ namespace Website {
     explicit WebsiteComponent(const JsonObjectConst& inputObject);
     virtual ~WebsiteComponent() = default;
 
-
       // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
       // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
       // ** REMEMBER TO CHECK THAT MEMORY IS NOT LOCKED ADN WRAP THIS METHOD IN lock() and release() functions to make it thread safe (ESP32)
@@ -233,19 +324,19 @@ namespace Website {
     if(inputObject.containsKey(JsonKey::Name)) {
       this->name = inputObject[JsonKey::Name].as<String>();
     } else {
-      Serial.println("Name not found");
+      Log::error("Name not found");
       initializedOK = false;
     }
     if(inputObject.containsKey(JsonKey::PosX)) {
       this->posX = inputObject[JsonKey::PosX];
     } else {
-      Serial.println("PosX not found");
+      Log::error("PosX not found");
       initializedOK = false;
     }
     if(inputObject.containsKey(JsonKey::PosY)) {
       this->posY = inputObject[JsonKey::PosY];
     } else {
-      Serial.println("PosY not found");
+      Log::error("PosY not found");
       initializedOK = false;
     }
 
@@ -1557,10 +1648,24 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
 
 void WiFiInit(){
-  Serial.print("Setting AP (Access Point)…");
+/*  Serial.print("Setting AP (Access Point)…");
   if(WiFi.softAP(ssid, password)) Serial.println("connected");
   Serial.print("AP IP address: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.println(WiFi.softAPIP());*/
+
+  WiFiConfig::setIsAccessPoint(false);
+  WiFiConfig::setSsid("NET-MAR_619");
+  WiFiConfig::setPassword("bielaki123424G");
+  WiFiConfig::init();
+
+/*  WiFiConfig::setIsAccessPoint(true);
+  WiFiConfig::setSsid("esp_ap");
+  WiFiConfig::setPassword("123456789");
+  WiFiConfig::init();*/
+
+
+
+
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
   Log::errorStream.reserve(100);
