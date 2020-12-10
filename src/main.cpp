@@ -24,7 +24,7 @@ namespace WebsiteServer{
 AsyncWebServer server(80);
 
 
-const uint8_t CONNECT_ATTEMPTS_CNT = 10;
+const uint8_t CONNECT_ATTEMPTS_MAX = 10;
 
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS PROGMEM = "Access-Control-Allow-Methods";
@@ -186,18 +186,20 @@ namespace ErrorMessage{
     bool isAccessPointInitialized = false;
 
 
+    bool isWiFiInitialized = false;
+
     inline bool isWiFiDataValid() {
       return (isSsidInitialized && isPasswordInitialized && isAccessPointInitialized);
     }
 
-    void setSsid(const String &nSsid) {
+    void setSsid(const String& nSsid) {
       if (nSsid.length() > 0) {
         ssid = nSsid;
         isSsidInitialized = true;
       }
     }
 
-    void setPassword(const String &nPassword) {
+    void setPassword(const String& nPassword) {
       if (nPassword.length() > 0) {
         password = nPassword;
         isPasswordInitialized = true;
@@ -228,7 +230,6 @@ namespace ErrorMessage{
         Log::error("Failed to set up Access Point");
         res = false;
       }
-
       return res;
     }
 
@@ -245,7 +246,7 @@ namespace ErrorMessage{
       while(WiFi.status() != WL_CONNECTED){
         connectAttempts++;
         delay(100);
-        if(connectAttempts > CONNECT_ATTEMPTS_CNT){
+        if(connectAttempts > CONNECT_ATTEMPTS_MAX){
           Log::error("Cannot connect to WiFi, check your SSID and password");
           return false;
         }
@@ -262,6 +263,7 @@ namespace ErrorMessage{
       bool res;
       if(isAccessPoint) res = setUpAP();
       else res = setUpSTA();
+      isWiFiInitialized = res;
       return res;
     }
   }
@@ -1483,7 +1485,7 @@ namespace JsonReader {
       }
 
 
-    } else return InputJsonStatus::INVALID_INPUT;
+    }
     return InputJsonStatus::OK;
   }
 
@@ -1647,29 +1649,15 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
 
 
-void WiFiInit(){
-/*  Serial.print("Setting AP (Access Point)…");
-  if(WiFi.softAP(ssid, password)) Serial.println("connected");
-  Serial.print("AP IP address: ");
-  Serial.println(WiFi.softAPIP());*/
-
-  WiFiConfig::setIsAccessPoint(false);
-  WiFiConfig::setSsid("NET-MAR_619");
-  WiFiConfig::setPassword("bielaki123424G");
-  WiFiConfig::init();
-
-/*  WiFiConfig::setIsAccessPoint(true);
+void ServerInit(){
+  WiFiConfig::setIsAccessPoint(true);
   WiFiConfig::setSsid("esp_ap");
   WiFiConfig::setPassword("123456789");
-  WiFiConfig::init();*/
-
-
-
-
+  WiFiConfig::init();
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
-  Log::errorStream.reserve(100);
   server.begin();
+  Log::errorStream.reserve(100);
 }
 }
 
@@ -1681,7 +1669,7 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-  WebsiteServer::WiFiInit();
+  WebsiteServer::ServerInit();
 
   uint32_t before = millis();
   using namespace WebsiteServer;
