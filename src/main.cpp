@@ -261,6 +261,7 @@ namespace ErrorMessage{
     bool init() {
       if(!isWiFiDataValid()) return false;
       bool res;
+      WiFi.mode(WIFI_OFF);
       if(isAccessPoint) res = setUpAP();
       else res = setUpSTA();
       isWiFiInitialized = res;
@@ -1365,9 +1366,49 @@ String testWebsiteConfigStr = {R"(
       "componentType": "field",
       "posY": 400,
       "posX": 800
-    }
-
-
+    },
+    {
+      "name": "btna",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Vertical",
+      "width": 200,
+      "height": 40,
+      "color": "blue",
+      "posX": 50,
+      "posY": 700,
+      "componentType": "button"
+    },
+    {
+      "name": "btnb",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Vertical",
+      "width": 200,
+      "height": 40,
+      "color": "blue",
+      "posX": 300,
+      "posY": 700,
+      "componentType": "button"
+    },
+      {
+        "name" : "buttonInfo",
+        "componentType" : "label",
+        "posX" : 50,
+        "posY" : 670,
+        "color" : "blue",
+        "value": "Button",
+        "fontSize" : "25"
+      },
+      {
+        "name" : "buttonInfo2",
+        "componentType" : "label",
+        "posX" : 300,
+        "posY" : 670,
+        "color" : "blue",
+        "value": "Button2",
+        "fontSize" : "25"
+      }
   ]
 })"};
 
@@ -1450,24 +1491,31 @@ namespace JsonReader {
       }
 
       if(inputJsonMemory.isReadyToUse()){
+
+        // unlock json memory before returning
+        auto releaseAndReturn = [&] (InputJsonStatus status) {
+          inputJsonMemory.unlock();
+          return status;
+        };
+
         inputJsonMemory.lock();
         deserializeJson(*inputJsonMemory.get(), json);
-        if (inputJsonMemory.get()->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
+        if (inputJsonMemory.get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
 
         JsonObject inputObject = inputJsonMemory.get()->as<JsonObject>();
-        if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
+        if (!inputObject.containsKey(JsonKey::Elements)) return releaseAndReturn(InputJsonStatus::ELEMENTS_NOT_FOUND);
         JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
-        if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
+        if (elements.size() == 0) return releaseAndReturn(InputJsonStatus::ELEMENTS_ARRAY_EMPTY);
         if(!isElementsInitialized) {
           size_t biggestObjectSize = getBiggestObjectSize(elements);
 
-          if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return InputJsonStatus::ALLOC_ERROR;
+          if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           if(componentJsonMemory.allocate(getBufferSize(biggestObjectSize))){
             Website::WebsiteComponent::setJsonMemory(&componentJsonMemory);
             isElementsInitialized = true;
           } else {
             componentJsonMemory.garbageCollect();
-            return InputJsonStatus::ALLOC_ERROR;
+            return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           }
         }
 
@@ -1475,10 +1523,10 @@ namespace JsonReader {
         for (JsonObject element : elements) {
           auto res = card.add(element);
           if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
-            return InputJsonStatus::COMPONENT_TYPE_NOT_FOUND;
+            return releaseAndReturn(InputJsonStatus::COMPONENT_TYPE_NOT_FOUND);
           }
           else if (res != Website::Card::ComponentStatus::OK) {
-            return InputJsonStatus::OBJECT_NOT_VALID;
+            return releaseAndReturn(InputJsonStatus::OBJECT_NOT_VALID);
           }
         }
         inputJsonMemory.unlock();
@@ -1650,10 +1698,16 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
 
 void ServerInit(){
-  WiFiConfig::setIsAccessPoint(true);
+/*  WiFiConfig::setIsAccessPoint(true);
   WiFiConfig::setSsid("esp_ap");
   WiFiConfig::setPassword("123456789");
+  WiFiConfig::init();*/
+
+  WiFiConfig::setIsAccessPoint(false);
+  WiFiConfig::setSsid("NET-MAR_619");
+  WiFiConfig::setPassword("bielaki123424G");
   WiFiConfig::init();
+
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
   server.begin();
