@@ -62,10 +62,10 @@ RM = "C:\Program Files\JetBrains\CLion 2020.1.1\bin\cmake\win\bin\cmake.exe" -E 
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = C:\mySoft\Projects\Embedded\Ra\Workspace\code
+CMAKE_SOURCE_DIR = C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev
+CMAKE_BINARY_DIR = C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev
 
 # Utility rule file for Debug.
 
@@ -73,7 +73,7 @@ CMAKE_BINARY_DIR = C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp
 include CMakeFiles/Debug.dir/progress.make
 
 CMakeFiles/Debug:
-	cd /d C:\mySoft\Projects\Embedded\Ra\Workspace\code && platformio -c clion run --target debug -eesp32dev
+	cd /d C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code && platformio -c clion run --target debug -eesp32dev
 
 Debug: CMakeFiles/Debug
 Debug: CMakeFiles/Debug.dir/build.make
@@ -90,6 +90,6 @@ CMakeFiles/Debug.dir/clean:
 .PHONY : CMakeFiles/Debug.dir/clean
 
 CMakeFiles/Debug.dir/depend:
-	$(CMAKE_COMMAND) -E cmake_depends "MinGW Makefiles" C:\mySoft\Projects\Embedded\Ra\Workspace\code C:\mySoft\Projects\Embedded\Ra\Workspace\code C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev\CMakeFiles\Debug.dir\DependInfo.cmake --color=$(COLOR)
+	$(CMAKE_COMMAND) -E cmake_depends "MinGW Makefiles" C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev\CMakeFiles\Debug.dir\DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/Debug.dir/depend
 

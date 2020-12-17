@@ -67,10 +67,10 @@ RM = "C:\Program Files\JetBrains\CLion 2020.1.1\bin\cmake\win\bin\cmake.exe" -E 
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = C:\mySoft\Projects\Embedded\Ra\Workspace\code
+CMAKE_SOURCE_DIR = C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev
+CMAKE_BINARY_DIR = C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -99,9 +99,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev\CMakeFiles C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev\CMakeFiles\progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev\CMakeFiles C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev\CMakeFiles\progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start C:\mySoft\Projects\Embedded\Ra\Workspace\code\cmake-build-esp32dev\CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start C:\mySoft\Projects\Embedded\Ra\HTML_Generator\Workspace\code\cmake-build-esp32dev\CMakeFiles 0
 .PHONY : all
 
 # The main clean target
