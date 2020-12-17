@@ -1698,15 +1698,15 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
 
 void ServerInit(){
-/*  WiFiConfig::setIsAccessPoint(true);
+  WiFiConfig::setIsAccessPoint(true);
   WiFiConfig::setSsid("esp_ap");
   WiFiConfig::setPassword("123456789");
-  WiFiConfig::init();*/
+  WiFiConfig::init();
 
-  WiFiConfig::setIsAccessPoint(false);
+/*  WiFiConfig::setIsAccessPoint(false);
   WiFiConfig::setSsid("NET-MAR_619");
   WiFiConfig::setPassword("bielaki123424G");
-  WiFiConfig::init();
+  WiFiConfig::init();*/
 
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
