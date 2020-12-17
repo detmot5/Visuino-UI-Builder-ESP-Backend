@@ -1,24 +1,30 @@
 #include <Arduino.h>
+#ifdef ESP8266
 #include <ESP8266WiFi.h>
-#include <ESPAsyncWebServer.h>
 #include <FS.h>
+#endif
+#ifdef ESP32
+#include <WiFi.h>
+#include <SPIFFS.h>
+// Force AsyncTCP to run on one core!
+#define CONFIG_ASYNC_TCP_RUNNING_CORE 0
+#define CONFIG_ASYNC_TCP_USE_WDT 1
+#include <AsyncTCP.h>
+#endif
+#include <ESPAsyncWebServer.h>
+#include <StreamString.h>
 #include <vector>
-#include <sstream>
 
 #include <ArduinoJson.h>
-#include <StreamString.h>
 
-
-
+#define DEBUG_BUILD 1
 
 namespace WebsiteServer{
   
 AsyncWebServer server(80);
 
 
-
-const char* ssid     = "ESP8266-Access-Point";
-const char* password = "123456789";
+const uint8_t CONNECT_ATTEMPTS_MAX = 10;
 
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS PROGMEM = "Access-Control-Allow-Methods";
@@ -29,27 +35,32 @@ const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Ty
 
 
 const uint16_t HTTP_STATUS_OK PROGMEM = 200;
+const uint16_t HTTP_STATUS_OK_NO_CONTENT = 204;
 const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
 const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
 
 
-
 namespace DefaultValues {
   const char* Color PROGMEM = "#333333";
+  const char* Color2 PROGMEM = "darkorange";
+  const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
-  const char* SwitchSize PROGMEM = "default";
+  const char* FieldOutlineColor = "black";
+
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
   const uint16_t Height PROGMEM = 100;
+  const uint16_t SliderHeight PROGMEM = 20;
+  const uint16_t BarHeight PROGMEM = 20;
   const bool BooleanValue PROGMEM = false;
+  const bool IsVertical PROGMEM = false;
 }
 
 namespace ComponentType {
   namespace Input {
     const char* Switch PROGMEM = "switch";
     const char* Slider PROGMEM = "slider";
-    const char* CheckBox PROGMEM = "checkbox";
     const char* NumberInput PROGMEM = "numberInput";
     const char* Button PROGMEM = "button";
   }
@@ -58,16 +69,12 @@ namespace ComponentType {
     const char* Indicator PROGMEM = "indicator";
     const char* Chart PROGMEM = "chart";
     const char* Gauge PROGMEM = "gauge";
+    const char* ProgressBar PROGMEM = "progressBar";
+    const char* Field PROGMEM = "field";
   }
 }
 
-namespace DataType{
-  const char* Boolean PROGMEM = "boolean";
-  const char* Number PROGMEM = "number";
-  const char* Str PROGMEM = "string";
-}
-
-
+// DO NOT MODIFY!
 namespace JsonKey {
   const char* Title PROGMEM = "title";
   const char* Body PROGMEM = "body";
@@ -78,15 +85,15 @@ namespace JsonKey {
   const char* Height PROGMEM = "height";
   const char* PosX PROGMEM = "posX";
   const char* PosY PROGMEM = "posY";
-  const char* DataType PROGMEM = "dataType";
   const char* ComponentType PROGMEM = "componentType";
   const char* Value PROGMEM = "value";
   const char* Color PROGMEM = "color";
   const char* FontSize PROGMEM = "fontSize";
   const char* Text PROGMEM = "text";
   const char* TextColor PROGMEM = "textColor";
-
-  const char* SwitchSize PROGMEM = "size";
+  const char* IsVertical PROGMEM = "isVertical";
+  const char* Size PROGMEM = "size";
+  const char* FieldOutlineColor PROGMEM = "outlineColor";
 
   const char* MaxValue PROGMEM = "maxValue";
   const char* MinValue PROGMEM = "minValue";
@@ -111,10 +118,181 @@ namespace ErrorMessage{
     const char* ObjectNotValid PROGMEM = "Json Input - Object is not valid";
     const char* NameNotFound PROGMEM = "Json Input - Object name is not found";
     const char* InvalidInput PROGMEM = "Json Input - Invalid input";
+    const char* ComponentTypeNotFound = "Json Input - componentType not found";
     const char* OK PROGMEM = "Json Input - Ok";
   }
 }
 
+  namespace Log {
+    StreamString errorStream;
+    bool isDataReady = false;
+    const char* InfoHeader PROGMEM = "Server Info: ";
+    const char* ErrorHeader PROGMEM = "Server Error: ";
+
+    const char* MemStats PROGMEM = "Memory stats: ";
+    const char* HeapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
+    const char* FreeHeapMsg PROGMEM = "- Free heap: ";
+    const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
+
+    void memoryInfo(Stream& stream = errorStream) {
+#ifdef ESP8266
+      stream.println(MemStats);
+
+      stream.print(HeapFragmentationMsg);;
+      stream.println(ESP.getHeapFragmentation());
+
+      stream.print(FreeHeapMsg);
+      stream.println(ESP.getFreeHeap());
+
+      stream.print(MaxFreeHeapBlock);
+      stream.println(ESP.getMaxFreeBlockSize());
+#endif
+#ifdef ESP32
+      stream.println(MemStats);
+
+      stream.print(FreeHeapMsg);
+      stream.println(ESP.getFreeHeap());
+
+      stream.print(MaxFreeHeapBlock);
+      stream.print(ESP.getMaxAllocHeap());
+#endif
+      stream.println();
+      isDataReady = true;
+    }
+    void info (const char* msg, Stream& stream = errorStream) {
+      stream.print(InfoHeader);
+      stream.print(" ");
+      stream.println(msg);
+      isDataReady = true;
+    }
+
+    void error (const char* msg, Stream& stream = errorStream) {
+      stream.print(ErrorHeader);
+      stream.print(" ");
+      stream.println(msg);
+      memoryInfo(stream);
+      isDataReady = true;
+    }
+  }
+
+  namespace WiFiConfig {
+    String ssid;
+    bool isSsidInitialized = false;
+
+    String password;
+    bool isPasswordInitialized = false;
+
+    bool isAccessPoint;
+    bool isAccessPointInitialized = false;
+
+
+    bool isWiFiInitialized = false;
+
+    inline bool isWiFiDataValid() {
+      return (isSsidInitialized && isPasswordInitialized && isAccessPointInitialized);
+    }
+
+    void setSsid(const String& nSsid) {
+      if (nSsid.length() > 0) {
+        ssid = nSsid;
+        isSsidInitialized = true;
+      }
+    }
+
+    void setPassword(const String& nPassword) {
+      if (nPassword.length() > 0) {
+        password = nPassword;
+        isPasswordInitialized = true;
+      }
+    }
+
+    void setIsAccessPoint(bool isAp) {
+      isAccessPoint = isAp;
+      isAccessPointInitialized = true;
+    }
+
+
+    bool setUpAP() {
+      bool res = true;
+      String msg;
+      msg.reserve(50);
+
+      Log::info("Setting up in Access Point mode...");
+
+      if(WiFi.softAP(ssid.c_str(), password.c_str())) {
+        msg += "Access Point ";
+        msg += ssid;
+        msg += " created ";
+        msg += "Website is available at: ";
+        msg += WiFi.softAPIP().toString().c_str();
+        Log::info(msg.c_str());
+      } else{
+        Log::error("Failed to set up Access Point");
+        res = false;
+      }
+      return res;
+    }
+
+    bool setUpSTA() {
+      uint8_t connectAttempts = 0;
+      bool res = true;
+      String msg;
+      msg.reserve(50);
+      Log::info("Setting up in Station mode...");
+      msg += "Connecting to ";
+      msg += ssid + "...";
+      Log::info(msg.c_str());
+      WiFi.begin(ssid.c_str(), password.c_str());
+      while(WiFi.status() != WL_CONNECTED){
+        connectAttempts++;
+        delay(100);
+        if(connectAttempts > CONNECT_ATTEMPTS_MAX){
+          Log::error("Cannot connect to WiFi, check your SSID and password");
+          return false;
+        }
+      }
+      msg.clear();
+      msg += "Connected";
+      msg += ", Website is available at: ";
+      msg += WiFi.localIP().toString();
+      Log::info(msg.c_str());
+      return res;
+    }
+    bool init() {
+      if(!isWiFiDataValid()) return false;
+      bool res;
+      WiFi.mode(WIFI_OFF);
+      if(isAccessPoint) res = setUpAP();
+      else res = setUpSTA();
+      isWiFiInitialized = res;
+      return res;
+    }
+  }
+
+
+
+// Abstraction on Json Document which is common for few parts of app to make it thread safe
+class CommonJsonMemory {
+public:
+  ~CommonJsonMemory() {this->garbageCollect();}
+  bool allocate(size_t size) {
+    mem = new DynamicJsonDocument(size);
+    if(mem->capacity() != 0){
+      m_isInitialized = true;
+      return true;
+    }
+    else return false;
+  }
+  void garbageCollect() {delete mem;}
+  void lock() {this->m_isLocked = true;}
+  void unlock() {this->m_isLocked = false;}
+  bool isReadyToUse() {return (!m_isLocked) && m_isInitialized;}
+  DynamicJsonDocument* get() {return this->mem;}
+private:
+  DynamicJsonDocument* mem;
+  bool m_isLocked;
+  bool m_isInitialized;
+};
 
 namespace Website {
 
@@ -123,60 +301,68 @@ namespace Website {
     explicit WebsiteComponent(const JsonObjectConst& inputObject);
     virtual ~WebsiteComponent() = default;
 
-
       // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
       // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
+      // ** REMEMBER TO CHECK THAT MEMORY IS NOT LOCKED ADN WRAP THIS METHOD IN lock() and release() functions to make it thread safe (ESP32)
     virtual JsonObject toWebsiteJson() = 0;
     virtual void setState(const JsonObjectConst& object) = 0;
     bool isInitializedOK() const {return initializedOK;}
     const String& getName() const  {return name;}
 
-
-    static void setJsonMemory (DynamicJsonDocument* mem);
-    static bool isMemoryInitialized() {return memoryInitialized;}
+    static void setJsonMemory (CommonJsonMemory* mem);
+    static void lockJsonMemory();
+    static void releaseJsonMemory();
+    static bool isMemoryReadyToUse();
   protected:
-    static DynamicJsonDocument* jsonMemory;
-    static bool memoryInitialized;
+    static CommonJsonMemory* jsonMemory;
     bool initializedOK;
     uint16_t posX;
     uint16_t posY;
-    // TODO: implement it
-    uint8_t desktopScale;
     String name;
-    String dataType;
   };
-  DynamicJsonDocument* WebsiteComponent::jsonMemory = nullptr;
-  bool WebsiteComponent::memoryInitialized = false;
+  CommonJsonMemory* WebsiteComponent::jsonMemory = nullptr;
 
   WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
     initializedOK = true;
     if(inputObject.containsKey(JsonKey::Name)) {
       this->name = inputObject[JsonKey::Name].as<String>();
     } else {
-      Serial.println("Name not found");
+      Log::error("Name not found");
       initializedOK = false;
     }
     if(inputObject.containsKey(JsonKey::PosX)) {
       this->posX = inputObject[JsonKey::PosX];
     } else {
-      Serial.println("PosX not found");
+      Log::error("PosX not found");
       initializedOK = false;
     }
     if(inputObject.containsKey(JsonKey::PosY)) {
       this->posY = inputObject[JsonKey::PosY];
     } else {
-      Serial.println("PosY not found");
+      Log::error("PosY not found");
       initializedOK = false;
     }
 
   }
 
 
-  void WebsiteComponent::setJsonMemory (DynamicJsonDocument* mem) {
+  void WebsiteComponent::setJsonMemory (CommonJsonMemory* mem) {
     if ( mem != nullptr ) {
       jsonMemory = mem;
-      memoryInitialized = true;
     }
+  }
+
+  void WebsiteComponent::lockJsonMemory() {
+    if(jsonMemory != nullptr) jsonMemory->lock();
+  }
+
+  void WebsiteComponent::releaseJsonMemory() {
+    if(jsonMemory != nullptr) jsonMemory->unlock();
+  }
+
+  bool WebsiteComponent::isMemoryReadyToUse() {
+    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
+    else return false;
   }
 
   // ----------------------------------------------------------------------------
@@ -209,35 +395,27 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::Value)){
         this->value = inputObject[JsonKey::Value];
       } else {
-        Serial.println("Value not found");
         this->value = DefaultValues::BooleanValue;
       }
-      if(inputObject.containsKey(JsonKey::SwitchSize)){
-        this->size = inputObject[JsonKey::SwitchSize].as<String>();
-      } else this->size = DefaultValues::SwitchSize;
-
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
-      } else this->color = DefaultValues::Color;
+      if(inputObject.containsKey(JsonKey::Size)){
+        this->size = inputObject[JsonKey::Size];
+      } else this->size = 10;
     }
 
     JsonObject toVisuinoJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
-      websiteObj[JsonKey::Color] = this->color;
-      websiteObj[JsonKey::SwitchSize] = this->size;
+      websiteObj[JsonKey::Size] = this->size;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Switch;
       return websiteObj;
     }
@@ -258,8 +436,7 @@ namespace Website {
   private:
     static String str;
     bool value;
-    String color;
-    String size;
+    uint16_t size;
   };
 
   String Switch::str;
@@ -271,10 +448,10 @@ namespace Website {
       : InputComponent(inputObject) {
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
-      } else initializedOK = false;
+      } else this->width = DefaultValues::Width;
       if(inputObject.containsKey(JsonKey::Height)){
         this->height = inputObject[JsonKey::Height];
-      } else initializedOK = false;
+      } else this->height = DefaultValues::SliderHeight;
       if(inputObject.containsKey(JsonKey::MinValue)){
         this->minValue = inputObject[JsonKey::MinValue];
       } else initializedOK = false;
@@ -290,16 +467,14 @@ namespace Website {
     }
 
     JsonObject toVisuinoJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -351,15 +526,14 @@ namespace Website {
       } else this->fontSize = DefaultValues::FontSize;
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
-      } else this->width = 100;
+      } else this->width = DefaultValues::Width;
       if(inputObject.containsKey(JsonKey::Color)){
         this->color = inputObject[JsonKey::Color].as<String>();
-      }
+      } else this->color = DefaultValues::Color;
     }
 
     JsonObject toVisuinoJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
@@ -367,8 +541,7 @@ namespace Website {
 
 
     JsonObject toWebsiteJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -421,23 +594,27 @@ namespace Website {
       if(inputObject.containsKey(JsonKey::Text)){
         this->text = inputObject[JsonKey::Text].as<String>();
       } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::TextColor)){
         this->textColor = inputObject[JsonKey::TextColor].as<String>();
       } else this->textColor = DefaultValues::TextColor;
+      if(inputObject.containsKey(JsonKey::IsVertical)){
+        this->isVertical = inputObject[JsonKey::IsVertical];
+      } else this->isVertical = DefaultValues::IsVertical;
       this->value = false;
     }
 
     JsonObject toVisuinoJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject outputObj = jsonMemory->to<JsonObject>();
+      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -447,6 +624,7 @@ namespace Website {
       websiteObj[JsonKey::TextColor] = this->textColor;
       websiteObj[JsonKey::Text] = this->text;
       websiteObj[JsonKey::FontSize] = this->fontSize;
+      websiteObj[JsonKey::IsVertical] = this->isVertical;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Button;
       return websiteObj;
     }
@@ -474,6 +652,7 @@ namespace Website {
     String text;
     String color;
     String textColor;
+    bool isVertical;
   };
   String Button::str;
   bool Button::isDataReady;
@@ -495,8 +674,7 @@ namespace Website {
     }
 
     JsonObject toWebsiteJson() override {
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -531,12 +709,6 @@ namespace Website {
   public:
     explicit Gauge(const JsonObjectConst& inputObject)
       : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Value)){
-        this->value = inputObject[JsonKey::Value];
-      } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
-      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::MaxValue)){
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else {
@@ -549,6 +721,12 @@ namespace Website {
         this->maxValue = 0;
         initializedOK = false;
       }
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
@@ -558,8 +736,7 @@ namespace Website {
     }
 
     JsonObject toWebsiteJson() override{
-      if(!isMemoryInitialized()) return {};
-      JsonObject websiteObj = jsonMemory->to<JsonObject>();
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -573,7 +750,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst &object) override{
+    void setState(const JsonObjectConst& object) override{
       if(object.containsKey(JsonKey::Value)){
         this->value = object[JsonKey::Value];
       } else this->value = 0;
@@ -591,6 +768,154 @@ namespace Website {
     String color;
   };
 
+  class LedIndicator : public OutputComponent {
+  public:
+    explicit LedIndicator(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = DefaultValues::BooleanValue;
+      if(inputObject.containsKey(JsonKey::Size)){
+        this->size = inputObject[JsonKey::Size];
+      } else this->size = 10;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::LedColor;
+    }
+
+    JsonObject toWebsiteJson() override{
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::Size] = this->size;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Indicator;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+
+  private:
+    bool value;
+    uint16_t size;
+    String color;
+  };
+
+
+  class ProgressBar : public OutputComponent{
+  public:
+    explicit ProgressBar(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::MinValue)){
+        this->minValue = inputObject[JsonKey::MinValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::MaxValue)){
+        this->maxValue = inputObject[JsonKey::MaxValue];
+      } else initializedOK = false;
+      if(inputObject.containsKey(JsonKey::Value)){
+        this->value = inputObject[JsonKey::Value];
+      } else this->value = 0;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color2;
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = DefaultValues::Width;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = DefaultValues::BarHeight;
+      if(inputObject.containsKey(JsonKey::IsVertical)){
+        this->isVertical = inputObject[JsonKey::IsVertical];
+      } else this->isVertical = DefaultValues::IsVertical;
+    }
+
+
+    JsonObject toWebsiteJson() override{
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::Value] = this->value;
+      websiteObj[JsonKey::MaxValue] = this->maxValue;
+      websiteObj[JsonKey::MinValue] = this->minValue;
+      websiteObj[JsonKey::IsVertical] = this->isVertical;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::ProgressBar;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Value)){
+        this->value = object[JsonKey::Value];
+      }
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+  private:
+    String color;
+    uint16_t maxValue;
+    uint16_t minValue;
+    float value;
+    uint16_t width;
+    uint16_t height;
+    bool isVertical;
+  };
+
+  class ColorField : public OutputComponent{
+  public:
+    explicit ColorField(const JsonObjectConst& inputObject)
+      : OutputComponent(inputObject){
+      if(inputObject.containsKey(JsonKey::Width)){
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = DefaultValues::Width;
+      if(inputObject.containsKey(JsonKey::Height)){
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = DefaultValues::Height;
+      if(inputObject.containsKey(JsonKey::Color)){
+        this->color = inputObject[JsonKey::Color].as<String>();
+      } else this->color = DefaultValues::Color;
+      if(inputObject.containsKey(JsonKey::FieldOutlineColor)){
+        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<String>();
+      } else this->outlineColor = DefaultValues::FieldOutlineColor;
+    }
+
+    JsonObject toWebsiteJson() override{
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::Color] = this->color;
+      websiteObj[JsonKey::FieldOutlineColor] = this->outlineColor;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
+      return websiteObj;
+    }
+    void setState(const JsonObjectConst& object) override{
+      if(object.containsKey(JsonKey::Color)){
+        this->color = object[JsonKey::Color].as<String>();
+      }
+    }
+  private:
+    uint16_t width;
+    uint16_t height;
+    String color;
+    String outlineColor;
+  };
+
+
 
   class Card {
   public:
@@ -599,36 +924,45 @@ namespace Website {
     enum class ComponentStatus : uint8_t{
       OK,
       OBJECT_NOT_VALID,
-      UNKNOWN_NAME,
+      COMPONENT_TYPE_NOT_FOUND,
     };
 
-    static void setJsonMemory(DynamicJsonDocument* mem);
     ComponentStatus add(const JsonObjectConst& object);
     JsonObject onHTTPRequest();
     bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
     void reserve(size_t size);
     void garbageCollect();
-    const std::vector<WebsiteComponent*>& getComponents() const {return components;}
+    const String& getTitle() const {return this->title;}
+    void setTitle(const String& nTitle) {this->title = nTitle;}
+    static void setJsonMemory(CommonJsonMemory* mem);
+    static void setJsonMemoryForVisuino(CommonJsonMemory* mem);
+    static void lockJsonMemory();
+    static void releaseJsonMemory();
+    static bool isMemoryReadyToUse();
+
+    static void lockOutputJsonMemory();
+    static void releaseOutputJsonMemory();
+    static bool isOutputMemoryReadyToUse();
+
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
-    template<typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
-    static DynamicJsonDocument* jsonMemory;
-    static bool isMemoryInitialized;
+    template <typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
     std::vector<WebsiteComponent*> components;
-
+    String title;
+    static CommonJsonMemory* jsonMemory;                        // main JSON memory, used for preparing data to /input HTTP request, size is all components size * 2 (common with parsing json)
+    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 point on the same as "jsonMemory"
   };
 
-  DynamicJsonDocument* Card::jsonMemory = nullptr;
-  bool Card::isMemoryInitialized = false;
-
-
+  CommonJsonMemory* Card::jsonMemory;
+  CommonJsonMemory* Card::outputJsonMemory;
 
   Card::ComponentStatus Card::add(const JsonObjectConst& object) {
     if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
     const char* componentType = object[JsonKey::ComponentType];
+    if(strlen(componentType) < 1) return ComponentStatus::COMPONENT_TYPE_NOT_FOUND;
     using namespace ComponentType;
 
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
@@ -644,30 +978,37 @@ namespace Website {
       parseOutputComponentToWebsite<Label>(object);
     } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
       parseOutputComponentToWebsite<Gauge>(object);
-    } else {
+    } else if(!strncmp(componentType, Output::Indicator, strlen(componentType))){
+      parseOutputComponentToWebsite<LedIndicator>(object);
+    } else if(!strncmp(componentType, Output::ProgressBar, strlen(componentType))){
+      parseOutputComponentToWebsite<ProgressBar>(object);
+    } else if(!strncmp(componentType, Output::Field, strlen(componentType))){
+      parseOutputComponentToWebsite<ColorField>(object);
+    }
+
+    else {
       return ComponentStatus::OBJECT_NOT_VALID;
     }
     return ComponentStatus::OK;
   }
 
   JsonObject Card::onHTTPRequest() {
-    if(isMemoryInitialized){
-      JsonObject object = jsonMemory->to<JsonObject>();
-      JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
+    //jsonMemory should be already locked before calling this func!!
+    JsonObject object = jsonMemory->get()->to<JsonObject>();
+    JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
+    if(WebsiteComponent::isMemoryReadyToUse()){
+      WebsiteComponent::lockJsonMemory();     // lock component memory
       for(auto component : this->components) {
         elements.add(component->toWebsiteJson());
       }
-      return object;
-    } else{
-      Serial.println("not initialized");
-      return {};
+      WebsiteComponent::releaseJsonMemory(); // components are copied to main memory, so we can release it.
     }
+    return object;
   }
 
   bool Card::onComponentStatusHTTPRequest(const uint8_t* data, size_t len){
-    if(!isMemoryInitialized) return false;
-    deserializeJson(*jsonMemory, reinterpret_cast<const char*>(data), len);
-    auto receivedJson = jsonMemory->as<JsonObject>();
+    deserializeJson(*outputJsonMemory->get(), reinterpret_cast<const char*>(data), len);
+    auto receivedJson = outputJsonMemory->get()->as<JsonObject>();
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
     if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
@@ -708,9 +1049,8 @@ namespace Website {
     return nullptr;
   }
 
-  void Card::setJsonMemory(DynamicJsonDocument *mem) {
+  void Card::setJsonMemory(CommonJsonMemory* mem) {
     jsonMemory = mem;
-    isMemoryInitialized = true;
   }
 
   template<typename componentType>
@@ -725,7 +1065,8 @@ namespace Website {
       }
     } else {
       auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
-      component->setState(object);
+      if(component != nullptr) component->setState(object);
+      else return false;
     }
     return true;
   }
@@ -740,8 +1081,7 @@ namespace Website {
         delete component;
         return false;
       }
-    } else return false;
-
+    }
     return true;
   }
 
@@ -751,23 +1091,54 @@ namespace Website {
     auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
     if(component == nullptr) return false;
     component->setState(object);
-    componentType::setVisuinoOutput(component->toVisuinoJson());
+    if(WebsiteComponent::isMemoryReadyToUse()){
+      WebsiteComponent::lockJsonMemory();
+      componentType::setVisuinoOutput(component->toVisuinoJson());
+      WebsiteComponent::releaseJsonMemory();
+    } else return false;
     return true;
   }
 
+  void Card::lockJsonMemory() {
+    if(jsonMemory != nullptr) jsonMemory->lock();
+  }
+
+  void Card::releaseJsonMemory() {
+    if(jsonMemory != nullptr) jsonMemory->unlock();
+  }
+
+  bool Card::isMemoryReadyToUse() {
+    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
+    else return false;
+  }
+
+  void Card::setJsonMemoryForVisuino(CommonJsonMemory *mem) {
+    outputJsonMemory = mem;
+  }
+
+  void Card::lockOutputJsonMemory() {
+    if(outputJsonMemory != nullptr) outputJsonMemory->lock();
+  }
+
+  void Card::releaseOutputJsonMemory() {
+    if(outputJsonMemory != nullptr) outputJsonMemory->unlock();
+  }
+
+  bool Card::isOutputMemoryReadyToUse() {
+    if(outputJsonMemory != nullptr) return outputJsonMemory->isReadyToUse();
+    return false;
+  }
+
+
 }
 
-
-
-
-const String wrongWebsiteStr = {R"(gugugwno)"};
 
 String testWebsiteConfigStr = {R"(
 {
   "elements" : [
       {
         "name" : "Lamp2",
-        "size" : "default",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 100,
         "posY" : 100,
@@ -776,7 +1147,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Motor",
-        "size" : "large",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 400,
         "posY" : 400,
@@ -785,7 +1156,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Nothing",
-        "size" : "large",
+        "size" : 25,
         "componentType" : "switch",
         "posX" : 170,
         "posY" : 100,
@@ -794,7 +1165,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Something",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 50,
         "posY" : 150,
@@ -803,7 +1174,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "Servo",
-        "size" : "large",
+        "size" : 20,
         "componentType" : "switch",
         "dataType" : "boolean",
         "posX" : 170,
@@ -813,7 +1184,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "LightBulb",
-        "size" : "default",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 100,
         "posY" : 150,
@@ -822,7 +1193,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "bulb",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 50,
         "posY" : 100,
@@ -831,7 +1202,7 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name" : "bulb2",
-        "size" : "small",
+        "size" : 20,
         "componentType" : "switch",
         "posX" : 10,
         "posY" : 100,
@@ -910,30 +1281,135 @@ String testWebsiteConfigStr = {R"(
         "posX": 400
     },
     {
-        "name": "other temperatureeee",
-        "color": "blue",
-        "fontSize": 16,
-        "width": 150,
-        "value": 41.2,
-        "desktopScale": 2,
-        "componentType": "numberInput",
-        "posY": 300,
-        "posX": 450
-      },
-     {
+      "name" : "progress-bar",
+      "componentType" : "progressBar",
+      "posX" : 700,
+      "posY" : 350,
+      "color" : "orangered",
+      "value": 700,
+      "maxValue": 800,
+      "minValue": 0,
+      "width" : 250,
+      "height": 20,
+      "isVertical": true
+    },
+    {
+      "name" : "progress-bar2",
+      "componentType" : "progressBar",
+      "posX" : 750,
+      "posY" : 600,
+      "color" : "lime",
+      "value": 700,
+      "maxValue": 800,
+      "minValue": 0,
+      "width" : 250,
+      "height": 20,
+      "isVertical": false
+    },
+    {
+      "name": "btn2",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Horizontal",
+      "width": 40,
+      "height": 200,
+      "color": "darkorange",
+      "posX": 1400,
+      "posY": 500,
+      "isVertical": true,
+      "componentType": "button"
+    },
+    {
       "name": "btn",
       "textColor": "white",
       "fontSize": 16,
-      "text": "Click me",
+      "text": "Vertical",
       "width": 200,
       "height": 40,
-      "color": "#444",
-      "posX": 500,
-      "posY": 80,
-      "componentType": "button",
-    }
+      "color": "blue",
+      "posX": 1000,
+      "posY": 700,
+      "componentType": "button"
+    },
+    {
+      "name": "controls",
+      "color": "#bbb",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 0,
+      "posX": 0
+    },
+    {
+      "name": "controls2",
+      "color": "#bbb",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 0,
+      "posX": 800
+    },
+    {
+      "name": "controls3",
+      "color": "#ddd",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 400,
+      "posX": 0
+    },
+    {
+      "name": "controls4",
+      "color": "#ddd",
+      "width": 800,
+      "height" : 400,
+      "componentType": "field",
+      "posY": 400,
+      "posX": 800
+    },
+    {
+      "name": "btna",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Vertical",
+      "width": 200,
+      "height": 40,
+      "color": "blue",
+      "posX": 50,
+      "posY": 700,
+      "componentType": "button"
+    },
+    {
+      "name": "btnb",
+      "textColor": "white",
+      "fontSize": 16,
+      "text": "Vertical",
+      "width": 200,
+      "height": 40,
+      "color": "blue",
+      "posX": 300,
+      "posY": 700,
+      "componentType": "button"
+    },
+      {
+        "name" : "buttonInfo",
+        "componentType" : "label",
+        "posX" : 50,
+        "posY" : 670,
+        "color" : "blue",
+        "value": "Button",
+        "fontSize" : "25"
+      },
+      {
+        "name" : "buttonInfo2",
+        "componentType" : "label",
+        "posX" : 300,
+        "posY" : 670,
+        "color" : "blue",
+        "value": "Button2",
+        "fontSize" : "25"
+      }
   ]
-
 })"};
 
 
@@ -942,8 +1418,12 @@ Website::Card card;
 
 namespace JsonReader {
   size_t memorySize = 0;
-  DynamicJsonDocument* inputJsonMemory = nullptr;
-  DynamicJsonDocument* componentJsonMemory = nullptr;
+  CommonJsonMemory inputJsonMemory;
+  CommonJsonMemory componentJsonMemory;
+#ifdef ESP32
+  CommonJsonMemory visuinoOutputJsonMemory;
+#endif
+
   enum class InputJsonStatus : uint8_t {
     OK,
     JSON_OVERFLOW,
@@ -954,6 +1434,7 @@ namespace JsonReader {
     ELEMENTS_ARRAY_EMPTY,
     OBJECT_NOT_VALID,
     NAME_NOT_FOUND,
+    COMPONENT_TYPE_NOT_FOUND,
   };
 
   bool validateJson(const String& json){
@@ -963,15 +1444,32 @@ namespace JsonReader {
 
   size_t getBiggestObjectSize(const JsonArrayConst& arr){
     size_t biggest = 0;
-    for (const auto &item : arr) {
+    for (const auto& item : arr) {
       if(item.memoryUsage() > biggest) biggest = item.memoryUsage();
     }
     return biggest;
   }
   
   size_t getBufferSize(size_t memoryUsage){
-    size_t newSize = memoryUsage + (memoryUsage / 10);
+    size_t newSize = memoryUsage * 2;
     return newSize;
+  }
+
+  // ESP32 needs second JSON document because of multicore architecture and it could not be common with input memory
+  bool setVisuinoOutputMemory(size_t size){
+#ifdef ESP32
+    if(visuinoOutputJsonMemory.allocate(size)){
+      Website::Card::setJsonMemoryForVisuino(&visuinoOutputJsonMemory);
+      return true;
+    } else{
+      visuinoOutputJsonMemory.garbageCollect();
+      return false;
+    }
+#endif
+#ifdef ESP8266
+    Website::Card::setJsonMemoryForVisuino(&inputJsonMemory);
+    return true;
+#endif
   }
 
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
@@ -983,43 +1481,59 @@ namespace JsonReader {
       if (!isInitialized) {
         memorySize = json.length();
         Serial.println((int)memorySize);
-        inputJsonMemory =  new DynamicJsonDocument(getBufferSize(memorySize));
-        if (inputJsonMemory->capacity() != 0) {
-          Website::Card::setJsonMemory(inputJsonMemory);
+        if (inputJsonMemory.allocate(getBufferSize(memorySize))) {
+          Website::Card::setJsonMemory(&inputJsonMemory);
           isInitialized = true;
         } else {
-          delete inputJsonMemory;
-          return InputJsonStatus::ALLOC_ERROR;
-        }
-      }
-      deserializeJson(*inputJsonMemory, json);
-      if (inputJsonMemory->overflowed()) return InputJsonStatus::JSON_OVERFLOW;
-
-      JsonObject inputObject = inputJsonMemory->as<JsonObject>();
-      if (!inputObject.containsKey(JsonKey::Elements)) return InputJsonStatus::ELEMENTS_NOT_FOUND;
-      JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
-      if (elements.size() == 0) return InputJsonStatus::ELEMENTS_ARRAY_EMPTY;
-      if(!isElementsInitialized) {
-        size_t biggestObjectSize = getBiggestObjectSize(elements);
-        Serial.println((int)biggestObjectSize);
-        componentJsonMemory = new DynamicJsonDocument(getBufferSize(biggestObjectSize));
-        if(componentJsonMemory->capacity() != 0){
-          Website::WebsiteComponent::setJsonMemory(componentJsonMemory);
-          isElementsInitialized = true;
-        } else {
-          delete componentJsonMemory;
+          inputJsonMemory.garbageCollect();
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
 
-      card.reserve(elements.size());
-      for (JsonObject element : elements) {
-        if (card.add(element) != Website::Card::ComponentStatus::OK) {
-          return InputJsonStatus::OBJECT_NOT_VALID;
+      if(inputJsonMemory.isReadyToUse()){
+
+        // unlock json memory before returning
+        auto releaseAndReturn = [&] (InputJsonStatus status) {
+          inputJsonMemory.unlock();
+          return status;
+        };
+
+        inputJsonMemory.lock();
+        deserializeJson(*inputJsonMemory.get(), json);
+        if (inputJsonMemory.get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
+
+        JsonObject inputObject = inputJsonMemory.get()->as<JsonObject>();
+        if (!inputObject.containsKey(JsonKey::Elements)) return releaseAndReturn(InputJsonStatus::ELEMENTS_NOT_FOUND);
+        JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
+        if (elements.size() == 0) return releaseAndReturn(InputJsonStatus::ELEMENTS_ARRAY_EMPTY);
+        if(!isElementsInitialized) {
+          size_t biggestObjectSize = getBiggestObjectSize(elements);
+
+          if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
+          if(componentJsonMemory.allocate(getBufferSize(biggestObjectSize))){
+            Website::WebsiteComponent::setJsonMemory(&componentJsonMemory);
+            isElementsInitialized = true;
+          } else {
+            componentJsonMemory.garbageCollect();
+            return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
+          }
         }
+
+        card.reserve(elements.size());
+        for (JsonObject element : elements) {
+          auto res = card.add(element);
+          if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
+            return releaseAndReturn(InputJsonStatus::COMPONENT_TYPE_NOT_FOUND);
+          }
+          else if (res != Website::Card::ComponentStatus::OK) {
+            return releaseAndReturn(InputJsonStatus::OBJECT_NOT_VALID);
+          }
+        }
+        inputJsonMemory.unlock();
       }
 
-    } else return InputJsonStatus::INVALID_INPUT;
+
+    }
     return InputJsonStatus::OK;
   }
 
@@ -1055,48 +1569,13 @@ namespace JsonReader {
       case InputJsonStatus::OK:
         statusStr = ErrorMessage::JsonInput::OK;
         break;
+      case InputJsonStatus::COMPONENT_TYPE_NOT_FOUND:
+        statusStr = ComponentTypeNotFound;
+        break;
     }
     return statusStr;
   }
 }
-  namespace Log {
-    StreamString errorStream;
-    bool isDataReady = false;
-    const char* InfoHeader PROGMEM = "Server Info: ";
-    const char* ErrorHeader PROGMEM = "Server Error: ";
-
-    const char* MemStats PROGMEM = "Memory stats: ";
-    const char* HeapFragmentationMsg PROGMEM = "- Heap fragmentation: ";
-    const char* FreeHeapMsg PROGMEM = "- Free heap: ";
-    const char* MaxFreeHeapBlock PROGMEM = "- Largest free memory block: ";
-
-    void memoryInfo(Stream& stream = errorStream) {
-      stream.println(MemStats);
-      stream.print(HeapFragmentationMsg);
-      stream.println(ESP.getHeapFragmentation());
-
-      stream.print(FreeHeapMsg);
-      stream.println(ESP.getFreeHeap());
-
-      stream.print(MaxFreeHeapBlock);
-      stream.println(ESP.getMaxFreeBlockSize());
-      isDataReady = true;
-    }
-
-    void info (const char* msg, Stream& stream = errorStream) {
-      stream.print(InfoHeader);
-      stream.print(msg);
-      isDataReady = true;
-    }
-
-    void error (const char* msg, Stream& stream = errorStream) {
-      stream.print(ErrorHeader);
-      stream.println(msg);
-      memoryInfo(stream);
-      isDataReady = true;
-    }
-  }
-
 
 namespace JsonWriter{
   void write() {
@@ -1155,22 +1634,18 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 
   webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/component.js","application/javascript");
-  });
-
-  webServer.on("/Libs/switch.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/switch.js","application/javascript");
-  });
-
-  webServer.on("/Libs/switch.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/switch.css","text/css");
+#ifdef DEBUG_MODE
+    Log::info("Component", Serial);
+    Log::memoryInfo(Serial);
+#endif
   });
 
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
-  });
-
-  webServer.on("/renderer.js", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/renderer.js","application/javascript");
+#ifdef DEBUG_MODE
+    Log::info("Knob", Serial);
+    Log::memoryInfo(Serial);
+#endif
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1181,41 +1656,66 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK);
-    request->send(response);
+#ifdef DEBUG_BUILD
+    request->send(HTTP_STATUS_OK, "text/plain", "Debug Build");
+#else
+    const String& title = card.getTitle();
+    if (!title.isEmpty() || title.equals("")){
+      request->send(HTTP_STATUS_OK, "text/plain", title);
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+#endif
   });
 
-
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
-    AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", card.onHTTPRequest()[JsonKey::Body]);
-    fullCorsAllow(response);
-    request->send(response);
+    using namespace Website;
+    if(Card::isMemoryReadyToUse()){
+      Card::lockJsonMemory();
+      auto onRequest = card.onHTTPRequest()[JsonKey::Body];
+      if(onRequest.is<JsonArray>()) Serial.println("is array");
+      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", onRequest);
+      fullCorsAllow(response);
+      request->send(response);
+      Card::releaseJsonMemory();
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
-    card.onComponentStatusHTTPRequest(data, len);
-    request->send(HTTP_STATUS_OK);
+    using namespace Website;
+    if(Card::isOutputMemoryReadyToUse()){
+      Card::lockOutputJsonMemory();
+      if(card.onComponentStatusHTTPRequest(data, len)){
+        request->send(HTTP_STATUS_OK);
+      } else {
+        Log::error("Error while parsing input component");
+        request->send(HTTP_STATUS_BAD_REQUEST);
+      }
+      Card::releaseOutputJsonMemory();
+    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
 }
 
 
 
-void WiFiInit(){
-  Serial.print("Setting AP (Access Point)…");
-  if(WiFi.softAP(ssid, password)) Serial.println("connected");
-  Serial.print("AP IP address: ");
-  Serial.println(WiFi.softAPIP());
+void ServerInit(){
+  WiFiConfig::setIsAccessPoint(true);
+  WiFiConfig::setSsid("esp_ap");
+  WiFiConfig::setPassword("123456789");
+  WiFiConfig::init();
+
+/*  WiFiConfig::setIsAccessPoint(false);
+  WiFiConfig::setSsid("NET-MAR_619");
+  WiFiConfig::setPassword("bielaki123424G");
+  WiFiConfig::init();*/
+
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
-  Log::errorStream.reserve(100);
   server.begin();
+  Log::errorStream.reserve(100);
 }
 }
-
 
 void setup(){
-
   Serial.begin(9600);
   if(!SPIFFS.begin()){
     Serial.println("An Error has occurred while mounting SPIFFS");
@@ -1223,7 +1723,7 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-  WebsiteServer::WiFiInit();
+  WebsiteServer::ServerInit();
 
   uint32_t before = millis();
   using namespace WebsiteServer;
@@ -1232,7 +1732,7 @@ void setup(){
   WebsiteServer::testWebsiteConfigStr.clear();
   const char* msg = errorHandler(status);
   if(status != InputJsonStatus::OK) Log::error(msg);
-  uint32 after = millis();
+  uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
   WebsiteServer::Log::error("error test", Serial);
@@ -1242,5 +1742,6 @@ void setup(){
 
 void loop(){
   WebsiteServer::JsonWriter::write();
+
 }
 
