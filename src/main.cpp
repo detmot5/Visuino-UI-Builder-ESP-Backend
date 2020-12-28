@@ -6,6 +6,7 @@
 #ifdef ESP32
 #include <WiFi.h>
 #include <SPIFFS.h>
+#include <esp_wifi.h>
 // Force AsyncTCP to run on one core!
 #define CONFIG_ASYNC_TCP_RUNNING_CORE 0
 #define CONFIG_ASYNC_TCP_USE_WDT 1
@@ -19,9 +20,10 @@
 
 #define DEBUG_BUILD 1
 
-namespace WebsiteServer{
+namespace WebsiteServer {
   
 AsyncWebServer server(80);
+AsyncWebSocket socket("/ws");
 
 
 const uint8_t CONNECT_ATTEMPTS_MAX = 10;
@@ -46,7 +48,7 @@ namespace DefaultValues {
   const char* Color2 PROGMEM = "darkorange";
   const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
-  const char* FieldOutlineColor = "black";
+  const char* FieldOutlineColor PROGMEM = "black";
 
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
@@ -101,8 +103,8 @@ namespace JsonKey {
 }
 
 
-namespace ErrorMessage{
-  namespace Memory{
+namespace ErrorMessage {
+  namespace Memory {
     const char* HeapFragmentationTooHigh PROGMEM = "Memory - Heap Fragmentation too high, stability problems may occur";
     const char* LowHeapSpace PROGMEM = "Memory - Low Heap Space, stability problems may occur";
   }
@@ -174,7 +176,6 @@ namespace ErrorMessage{
       isDataReady = true;
     }
   }
-
   namespace WiFiConfig {
     String ssid;
     bool isSsidInitialized = false;
@@ -212,6 +213,9 @@ namespace ErrorMessage{
     }
 
 
+
+
+
     bool setUpAP() {
       bool res = true;
       String msg;
@@ -243,14 +247,18 @@ namespace ErrorMessage{
       msg += ssid + "...";
       Log::info(msg.c_str());
       WiFi.begin(ssid.c_str(), password.c_str());
-      while(WiFi.status() != WL_CONNECTED){
+
+      wifi_init_config_t config;
+
+      while (WiFi.status() != WL_CONNECTED) {
         connectAttempts++;
         delay(100);
-        if(connectAttempts > CONNECT_ATTEMPTS_MAX){
+        if(connectAttempts > CONNECT_ATTEMPTS_MAX) {
           Log::error("Cannot connect to WiFi, check your SSID and password");
           return false;
         }
       }
+
       msg.clear();
       msg += "Connected";
       msg += ", Website is available at: ";
@@ -269,15 +277,13 @@ namespace ErrorMessage{
     }
   }
 
-
-
 // Abstraction on Json Document which is common for few parts of app to make it thread safe
 class CommonJsonMemory {
 public:
   ~CommonJsonMemory() {this->garbageCollect();}
   bool allocate(size_t size) {
     mem = new DynamicJsonDocument(size);
-    if(mem->capacity() != 0){
+    if (mem->capacity() != 0) {
       m_isInitialized = true;
       return true;
     }
@@ -1438,8 +1444,7 @@ namespace JsonReader {
   };
 
   bool validateJson(const String& json){
-    if(json.isEmpty() || json.indexOf(JsonKey::Name) < 0) return false;
-    return true;
+    return !(json.isEmpty() || json.indexOf(JsonKey::Name) < 0);
   }
 
   size_t getBiggestObjectSize(const JsonArrayConst& arr){
@@ -1670,9 +1675,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     using namespace Website;
     if(Card::isMemoryReadyToUse()){
       Card::lockJsonMemory();
-      auto onRequest = card.onHTTPRequest()[JsonKey::Body];
-      if(onRequest.is<JsonArray>()) Serial.println("is array");
-      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", onRequest);
+      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json",  card.onHTTPRequest()[JsonKey::Body]);
       fullCorsAllow(response);
       request->send(response);
       Card::releaseJsonMemory();
@@ -1695,6 +1698,17 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   });
 }
 
+#if DEBUG_BUILD
+void registerWiFIDebugEvents(void){
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("AP connected!");
+  },SYSTEM_EVENT_AP_STACONNECTED);
+
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Serial.println("AP_Disconnected!");
+  },SYSTEM_EVENT_AP_STADISCONNECTED);
+}
+#endif
 
 
 void ServerInit(){
@@ -1702,6 +1716,9 @@ void ServerInit(){
   WiFiConfig::setSsid("esp_ap");
   WiFiConfig::setPassword("123456789");
   WiFiConfig::init();
+#if DEBUG_BUILD
+  registerWiFIDebugEvents();
+#endif
 
 /*  WiFiConfig::setIsAccessPoint(false);
   WiFiConfig::setSsid("NET-MAR_619");
@@ -1724,18 +1741,16 @@ void setup(){
     Serial.println("index.html not found");
   }
   WebsiteServer::ServerInit();
-
   uint32_t before = millis();
   using namespace WebsiteServer;
   using namespace WebsiteServer::JsonReader;
   InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
   WebsiteServer::testWebsiteConfigStr.clear();
   const char* msg = errorHandler(status);
-  if(status != InputJsonStatus::OK) Log::error(msg);
+  Log::info(msg);
   uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
-  WebsiteServer::Log::error("error test", Serial);
 }
 
 
