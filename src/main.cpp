@@ -14,6 +14,7 @@
 #endif
 #include <ESPAsyncWebServer.h>
 #include <StreamString.h>
+#include <sstream>
 #include <vector>
 
 #include <ArduinoJson.h>
@@ -219,10 +220,10 @@ namespace ErrorMessage {
     bool setUpAP() {
       bool res = true;
       String msg;
+      WiFi.setSleep(false);
+
       msg.reserve(50);
-
       Log::info("Setting up in Access Point mode...");
-
       if(WiFi.softAP(ssid.c_str(), password.c_str())) {
         msg += "Access Point ";
         msg += ssid;
@@ -247,9 +248,6 @@ namespace ErrorMessage {
       msg += ssid + "...";
       Log::info(msg.c_str());
       WiFi.begin(ssid.c_str(), password.c_str());
-
-      wifi_init_config_t config;
-
       while (WiFi.status() != WL_CONNECTED) {
         connectAttempts++;
         delay(100);
@@ -270,6 +268,8 @@ namespace ErrorMessage {
       if(!isWiFiDataValid()) return false;
       bool res;
       WiFi.mode(WIFI_OFF);
+      WiFi.setSleep(false);
+
       if(isAccessPoint) res = setUpAP();
       else res = setUpSTA();
       isWiFiInitialized = res;
@@ -1673,13 +1673,26 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
     using namespace Website;
-    if(Card::isMemoryReadyToUse()){
+#ifdef DEBUG_BUILD
+    Log::info("Proccessing info request");
+#endif
+    if(Card::isMemoryReadyToUse()) {
+#ifdef DEBUG_BUILD
+      Log::info("mem ok, request resolved");
+#endif
       Card::lockJsonMemory();
-      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json",  card.onHTTPRequest()[JsonKey::Body]);
+      static String responseBody;
+      responseBody = card.onHTTPRequest()[JsonKey::Body].as<String>();
+      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
       Card::releaseJsonMemory();
-    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+    } else {
+#ifdef DEBUG_BUILD
+      Log::info("mem locked, no content");
+#endif
+      request->send(HTTP_STATUS_OK_NO_CONTENT);
+    }
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
@@ -1712,18 +1725,18 @@ void registerWiFIDebugEvents(void){
 
 
 void ServerInit(){
-  WiFiConfig::setIsAccessPoint(true);
+/*  WiFiConfig::setIsAccessPoint(true);
   WiFiConfig::setSsid("esp_ap");
   WiFiConfig::setPassword("123456789");
-  WiFiConfig::init();
+  WiFiConfig::init();*/
 #if DEBUG_BUILD
   registerWiFIDebugEvents();
 #endif
 
-/*  WiFiConfig::setIsAccessPoint(false);
+  WiFiConfig::setIsAccessPoint(false);
   WiFiConfig::setSsid("NET-MAR_619");
   WiFiConfig::setPassword("bielaki123424G");
-  WiFiConfig::init();*/
+  WiFiConfig::init();
 
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
@@ -1744,8 +1757,8 @@ void setup(){
   uint32_t before = millis();
   using namespace WebsiteServer;
   using namespace WebsiteServer::JsonReader;
-  InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
-  WebsiteServer::testWebsiteConfigStr.clear();
+  InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
+  testWebsiteConfigStr.clear();
   const char* msg = errorHandler(status);
   Log::info(msg);
   uint32_t after = millis();
