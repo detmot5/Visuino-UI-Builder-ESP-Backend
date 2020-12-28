@@ -1681,8 +1681,8 @@ void HTTPSetMappings(AsyncWebServer& webServer){
       Log::info("mem ok, request resolved");
 #endif
       Card::lockJsonMemory();
-      static String responseBody;
-      responseBody = card.onHTTPRequest()[JsonKey::Body].as<String>();
+      static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
+      responseBody = card.onHTTPRequest()[JsonKey::Body].as<const char*>();
       AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
