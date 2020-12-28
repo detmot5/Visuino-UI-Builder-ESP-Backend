@@ -24,7 +24,6 @@
 namespace WebsiteServer {
   
 AsyncWebServer server(80);
-AsyncWebSocket socket("/ws");
 
 
 const uint8_t CONNECT_ATTEMPTS_MAX = 10;
@@ -1682,7 +1681,8 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 #endif
       Card::lockJsonMemory();
       static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
-      responseBody = card.onHTTPRequest()[JsonKey::Body].as<const char*>();
+      responseBody.clear();
+      serializeJson(card.onHTTPRequest()[JsonKey::Body], responseBody);
       AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
