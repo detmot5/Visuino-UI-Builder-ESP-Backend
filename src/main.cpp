@@ -37,7 +37,7 @@ const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Ty
 
 
 const uint16_t HTTP_STATUS_OK PROGMEM = 200;
-const uint16_t HTTP_STATUS_OK_NO_CONTENT = 204;
+const uint16_t HTTP_STATUS_OK_NO_CONTENT PROGMEM = 204;
 const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
 const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
@@ -167,7 +167,6 @@ namespace ErrorMessage {
       stream.println(msg);
       isDataReady = true;
     }
-
     void error (const char* msg, Stream& stream = errorStream) {
       stream.print(ErrorHeader);
       stream.print(" ");
@@ -176,6 +175,7 @@ namespace ErrorMessage {
       isDataReady = true;
     }
   }
+
   namespace WiFiConfig {
     String ssid;
     bool isSsidInitialized = false;
@@ -387,8 +387,7 @@ namespace Website {
   class OutputComponent : public WebsiteComponent {
   public:
     explicit OutputComponent(const JsonObjectConst& inputObject)
-      : WebsiteComponent(inputObject){
-    }
+      : WebsiteComponent(inputObject){}
   };
 
 
@@ -819,32 +818,32 @@ namespace Website {
   class ProgressBar : public OutputComponent{
   public:
     explicit ProgressBar(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::MinValue)){
+      : OutputComponent(inputObject) {
+      if(inputObject.containsKey(JsonKey::MinValue)) {
         this->minValue = inputObject[JsonKey::MinValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::MaxValue)){
+      if(inputObject.containsKey(JsonKey::MaxValue)) {
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Value)){
+      if(inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
+      if(inputObject.containsKey(JsonKey::Color)) {
         this->color = inputObject[JsonKey::Color].as<String>();
       } else this->color = DefaultValues::Color2;
-      if(inputObject.containsKey(JsonKey::Width)){
+      if(inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if(inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::BarHeight;
-      if(inputObject.containsKey(JsonKey::IsVertical)){
+      if(inputObject.containsKey(JsonKey::IsVertical)) {
         this->isVertical = inputObject[JsonKey::IsVertical];
       } else this->isVertical = DefaultValues::IsVertical;
     }
 
 
-    JsonObject toWebsiteJson() override{
+    JsonObject toWebsiteJson() override {
       JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
@@ -865,6 +864,7 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
       if(object.containsKey(JsonKey::Color)){
+        this->color.clear();
         this->color = object[JsonKey::Color].as<String>();
       }
     }
@@ -896,7 +896,7 @@ namespace Website {
       } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
 
-    JsonObject toWebsiteJson() override{
+    JsonObject toWebsiteJson() override {
       JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
@@ -908,7 +908,7 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
       return websiteObj;
     }
-    void setState(const JsonObjectConst& object) override{
+    void setState(const JsonObjectConst& object) override {
       if(object.containsKey(JsonKey::Color)){
         this->color = object[JsonKey::Color].as<String>();
       }
@@ -958,8 +958,8 @@ namespace Website {
     std::vector<WebsiteComponent*> components;
     String title;
     static CommonJsonMemory* jsonMemory;                        // main JSON memory, used for preparing data to /input HTTP request, size is all components size * 2 (common with parsing json)
-    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 point on the same as "jsonMemory"
-  };
+    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 points on the same as "jsonMemory"
+};
 
   CommonJsonMemory* Card::jsonMemory;
   CommonJsonMemory* Card::outputJsonMemory;
@@ -1477,6 +1477,7 @@ namespace JsonReader {
   }
 
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
+    using namespace Website;
     static bool isValid = false;
     static bool isInitialized = false;
     static bool isElementsInitialized = false;
@@ -1515,7 +1516,7 @@ namespace JsonReader {
 
           if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           if(componentJsonMemory.allocate(getBufferSize(biggestObjectSize))){
-            Website::WebsiteComponent::setJsonMemory(&componentJsonMemory);
+            WebsiteComponent::setJsonMemory(&componentJsonMemory);
             isElementsInitialized = true;
           } else {
             componentJsonMemory.garbageCollect();
@@ -1526,10 +1527,10 @@ namespace JsonReader {
         card.reserve(elements.size());
         for (JsonObject element : elements) {
           auto res = card.add(element);
-          if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
+          if(res == Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
             return releaseAndReturn(InputJsonStatus::COMPONENT_TYPE_NOT_FOUND);
           }
-          else if (res != Website::Card::ComponentStatus::OK) {
+          else if (res != Card::ComponentStatus::OK) {
             return releaseAndReturn(InputJsonStatus::OBJECT_NOT_VALID);
           }
         }
@@ -1759,8 +1760,7 @@ void setup(){
   using namespace WebsiteServer::JsonReader;
   InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
   testWebsiteConfigStr.clear();
-  const char* msg = errorHandler(status);
-  Log::info(msg);
+  Log::info(errorHandler(status));
   uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
