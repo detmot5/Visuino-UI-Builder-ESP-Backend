@@ -176,105 +176,7 @@ namespace ErrorMessage {
     }
   }
 
-  namespace WiFiConfig {
-    String ssid;
-    bool isSsidInitialized = false;
 
-    String password;
-    bool isPasswordInitialized = false;
-
-    bool isAccessPoint;
-    bool isAccessPointInitialized = false;
-
-
-    bool isWiFiInitialized = false;
-
-    inline bool isWiFiDataValid() {
-      return (isSsidInitialized && isPasswordInitialized && isAccessPointInitialized);
-    }
-
-    void setSsid(const String& nSsid) {
-      if (nSsid.length() > 0) {
-        ssid = nSsid;
-        isSsidInitialized = true;
-      }
-    }
-
-    void setPassword(const String& nPassword) {
-      if (nPassword.length() > 0) {
-        password = nPassword;
-        isPasswordInitialized = true;
-      }
-    }
-
-    void setIsAccessPoint(bool isAp) {
-      isAccessPoint = isAp;
-      isAccessPointInitialized = true;
-    }
-
-
-
-
-
-    bool setUpAP() {
-      bool res = true;
-      String msg;
-      WiFi.setSleep(false);
-
-      msg.reserve(50);
-      Log::info("Setting up in Access Point mode...");
-      if(WiFi.softAP(ssid.c_str(), password.c_str())) {
-        msg += "Access Point ";
-        msg += ssid;
-        msg += " created ";
-        msg += "Website is available at: ";
-        msg += WiFi.softAPIP().toString().c_str();
-        Log::info(msg.c_str());
-      } else{
-        Log::error("Failed to set up Access Point");
-        res = false;
-      }
-      return res;
-    }
-
-    bool setUpSTA() {
-      uint8_t connectAttempts = 0;
-      bool res = true;
-      String msg;
-      msg.reserve(50);
-      Log::info("Setting up in Station mode...");
-      msg += "Connecting to ";
-      msg += ssid + "...";
-      Log::info(msg.c_str());
-      WiFi.begin(ssid.c_str(), password.c_str());
-      while (WiFi.status() != WL_CONNECTED) {
-        connectAttempts++;
-        delay(100);
-        if(connectAttempts > CONNECT_ATTEMPTS_MAX) {
-          Log::error("Cannot connect to WiFi, check your SSID and password");
-          return false;
-        }
-      }
-
-      msg.clear();
-      msg += "Connected";
-      msg += ", Website is available at: ";
-      msg += WiFi.localIP().toString();
-      Log::info(msg.c_str());
-      return res;
-    }
-    bool init() {
-      if(!isWiFiDataValid()) return false;
-      bool res;
-      WiFi.mode(WIFI_OFF);
-      WiFi.setSleep(false);
-
-      if(isAccessPoint) res = setUpAP();
-      else res = setUpSTA();
-      isWiFiInitialized = res;
-      return res;
-    }
-  }
 
 // Abstraction on Json Document which is common for few parts of app to make it thread safe
 class CommonJsonMemory {
@@ -330,7 +232,7 @@ namespace Website {
   WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
     initializedOK = true;
     if(inputObject.containsKey(JsonKey::Name)) {
-      this->name = inputObject[JsonKey::Name].as<String>();
+      this->name = inputObject[JsonKey::Name].as<const char*>();
     } else {
       Log::error("Name not found");
       initializedOK = false;
@@ -466,7 +368,7 @@ namespace Website {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -532,7 +434,7 @@ namespace Website {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -596,13 +498,13 @@ namespace Website {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else this->fontSize = DefaultValues::FontSize;
       if(inputObject.containsKey(JsonKey::Text)){
-        this->text = inputObject[JsonKey::Text].as<String>();
+        this->text = inputObject[JsonKey::Text].as<const char*>();
       } else initializedOK = false;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::TextColor)){
-        this->textColor = inputObject[JsonKey::TextColor].as<String>();
+        this->textColor = inputObject[JsonKey::TextColor].as<const char*>();
       } else this->textColor = DefaultValues::TextColor;
       if(inputObject.containsKey(JsonKey::IsVertical)){
         this->isVertical = inputObject[JsonKey::IsVertical];
@@ -670,10 +572,10 @@ namespace Website {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else fontSize = DefaultValues::FontSize;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Value)){
-        this->value = inputObject[JsonKey::Value].as<String>();
+        this->value = inputObject[JsonKey::Value].as<const char*>();
       } else this->value = "";
     }
 
@@ -694,10 +596,10 @@ namespace Website {
         this->fontSize = object[JsonKey::FontSize];
       }
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
       if(object.containsKey(JsonKey::Value)){
-        this->value = object[JsonKey::Value].as<String>();
+        this->value = object[JsonKey::Value].as<const char*>();
       }
     }
 
@@ -729,7 +631,7 @@ namespace Website {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
@@ -759,7 +661,7 @@ namespace Website {
         this->value = object[JsonKey::Value];
       } else this->value = 0;
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -783,7 +685,7 @@ namespace Website {
         this->size = inputObject[JsonKey::Size];
       } else this->size = 10;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::LedColor;
     }
 
@@ -804,7 +706,7 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
     }
 
@@ -829,7 +731,7 @@ namespace Website {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
       if(inputObject.containsKey(JsonKey::Color)) {
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color2;
       if(inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
@@ -865,7 +767,7 @@ namespace Website {
       }
       if(object.containsKey(JsonKey::Color)){
         this->color.clear();
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
     }
   private:
@@ -889,10 +791,10 @@ namespace Website {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::Height;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::FieldOutlineColor)){
-        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<String>();
+        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<const char*>();
       } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
 
@@ -939,6 +841,7 @@ namespace Website {
     void garbageCollect();
     const String& getTitle() const {return this->title;}
     void setTitle(const String& nTitle) {this->title = nTitle;}
+
     static void setJsonMemory(CommonJsonMemory* mem);
     static void setJsonMemoryForVisuino(CommonJsonMemory* mem);
     static void lockJsonMemory();
@@ -1719,25 +1622,25 @@ void registerWiFIDebugEvents(void){
   },SYSTEM_EVENT_AP_STACONNECTED);
 
   WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
-    Serial.println("AP_Disconnected!");
+    Log::info("AP_Disconnected!");
   },SYSTEM_EVENT_AP_STADISCONNECTED);
+
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("STA_Connected");
+  }, SYSTEM_EVENT_STA_CONNECTED);
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("STA_Disconnected");
+  }, SYSTEM_EVENT_STA_DISCONNECTED);
 }
 #endif
 
 
 void ServerInit(){
-/*  WiFiConfig::setIsAccessPoint(true);
-  WiFiConfig::setSsid("esp_ap");
-  WiFiConfig::setPassword("123456789");
-  WiFiConfig::init();*/
 #if DEBUG_BUILD
   registerWiFIDebugEvents();
 #endif
 
-  WiFiConfig::setIsAccessPoint(false);
-  WiFiConfig::setSsid("NET-MAR_619");
-  WiFiConfig::setPassword("bielaki123424G");
-  WiFiConfig::init();
+
 
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
@@ -1754,6 +1657,8 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
+
+  WiFi.softAP("esp_ap", "123456789");
   WebsiteServer::ServerInit();
   uint32_t before = millis();
   using namespace WebsiteServer;
