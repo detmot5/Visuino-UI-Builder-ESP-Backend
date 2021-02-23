@@ -6,6 +6,7 @@
 #ifdef ESP32
 #include <WiFi.h>
 #include <SPIFFS.h>
+#include <esp_wifi.h>
 // Force AsyncTCP to run on one core!
 #define CONFIG_ASYNC_TCP_RUNNING_CORE 0
 #define CONFIG_ASYNC_TCP_USE_WDT 1
@@ -13,13 +14,14 @@
 #endif
 #include <ESPAsyncWebServer.h>
 #include <StreamString.h>
+#include <sstream>
 #include <vector>
 
 #include <ArduinoJson.h>
 
 #define DEBUG_BUILD 1
 
-namespace WebsiteServer{
+namespace WebsiteServer {
   
 AsyncWebServer server(80);
 
@@ -35,7 +37,7 @@ const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Ty
 
 
 const uint16_t HTTP_STATUS_OK PROGMEM = 200;
-const uint16_t HTTP_STATUS_OK_NO_CONTENT = 204;
+const uint16_t HTTP_STATUS_OK_NO_CONTENT PROGMEM = 204;
 const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
 const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
 
@@ -46,7 +48,7 @@ namespace DefaultValues {
   const char* Color2 PROGMEM = "darkorange";
   const char* LedColor PROGMEM = "lime";
   const char* TextColor PROGMEM = "white";
-  const char* FieldOutlineColor = "black";
+  const char* FieldOutlineColor PROGMEM = "black";
 
   const uint8_t FontSize PROGMEM = 16;
   const uint16_t Width PROGMEM = 100;
@@ -101,8 +103,8 @@ namespace JsonKey {
 }
 
 
-namespace ErrorMessage{
-  namespace Memory{
+namespace ErrorMessage {
+  namespace Memory {
     const char* HeapFragmentationTooHigh PROGMEM = "Memory - Heap Fragmentation too high, stability problems may occur";
     const char* LowHeapSpace PROGMEM = "Memory - Low Heap Space, stability problems may occur";
   }
@@ -165,107 +167,12 @@ namespace ErrorMessage{
       stream.println(msg);
       isDataReady = true;
     }
-
     void error (const char* msg, Stream& stream = errorStream) {
       stream.print(ErrorHeader);
       stream.print(" ");
       stream.println(msg);
       memoryInfo(stream);
       isDataReady = true;
-    }
-  }
-
-  namespace WiFiConfig {
-    String ssid;
-    bool isSsidInitialized = false;
-
-    String password;
-    bool isPasswordInitialized = false;
-
-    bool isAccessPoint;
-    bool isAccessPointInitialized = false;
-
-
-    bool isWiFiInitialized = false;
-
-    inline bool isWiFiDataValid() {
-      return (isSsidInitialized && isPasswordInitialized && isAccessPointInitialized);
-    }
-
-    void setSsid(const String& nSsid) {
-      if (nSsid.length() > 0) {
-        ssid = nSsid;
-        isSsidInitialized = true;
-      }
-    }
-
-    void setPassword(const String& nPassword) {
-      if (nPassword.length() > 0) {
-        password = nPassword;
-        isPasswordInitialized = true;
-      }
-    }
-
-    void setIsAccessPoint(bool isAp) {
-      isAccessPoint = isAp;
-      isAccessPointInitialized = true;
-    }
-
-
-    bool setUpAP() {
-      bool res = true;
-      String msg;
-      msg.reserve(50);
-
-      Log::info("Setting up in Access Point mode...");
-
-      if(WiFi.softAP(ssid.c_str(), password.c_str())) {
-        msg += "Access Point ";
-        msg += ssid;
-        msg += " created ";
-        msg += "Website is available at: ";
-        msg += WiFi.softAPIP().toString().c_str();
-        Log::info(msg.c_str());
-      } else{
-        Log::error("Failed to set up Access Point");
-        res = false;
-      }
-      return res;
-    }
-
-    bool setUpSTA() {
-      uint8_t connectAttempts = 0;
-      bool res = true;
-      String msg;
-      msg.reserve(50);
-      Log::info("Setting up in Station mode...");
-      msg += "Connecting to ";
-      msg += ssid + "...";
-      Log::info(msg.c_str());
-      WiFi.begin(ssid.c_str(), password.c_str());
-      while(WiFi.status() != WL_CONNECTED){
-        connectAttempts++;
-        delay(100);
-        if(connectAttempts > CONNECT_ATTEMPTS_MAX){
-          Log::error("Cannot connect to WiFi, check your SSID and password");
-          return false;
-        }
-      }
-      msg.clear();
-      msg += "Connected";
-      msg += ", Website is available at: ";
-      msg += WiFi.localIP().toString();
-      Log::info(msg.c_str());
-      return res;
-    }
-    bool init() {
-      if(!isWiFiDataValid()) return false;
-      bool res;
-      WiFi.mode(WIFI_OFF);
-      if(isAccessPoint) res = setUpAP();
-      else res = setUpSTA();
-      isWiFiInitialized = res;
-      return res;
     }
   }
 
@@ -277,7 +184,7 @@ public:
   ~CommonJsonMemory() {this->garbageCollect();}
   bool allocate(size_t size) {
     mem = new DynamicJsonDocument(size);
-    if(mem->capacity() != 0){
+    if (mem->capacity() != 0) {
       m_isInitialized = true;
       return true;
     }
@@ -325,7 +232,7 @@ namespace Website {
   WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
     initializedOK = true;
     if(inputObject.containsKey(JsonKey::Name)) {
-      this->name = inputObject[JsonKey::Name].as<String>();
+      this->name = inputObject[JsonKey::Name].as<const char*>();
     } else {
       Log::error("Name not found");
       initializedOK = false;
@@ -382,8 +289,7 @@ namespace Website {
   class OutputComponent : public WebsiteComponent {
   public:
     explicit OutputComponent(const JsonObjectConst& inputObject)
-      : WebsiteComponent(inputObject){
-    }
+      : WebsiteComponent(inputObject){}
   };
 
 
@@ -462,7 +368,7 @@ namespace Website {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -528,7 +434,7 @@ namespace Website {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -592,13 +498,13 @@ namespace Website {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else this->fontSize = DefaultValues::FontSize;
       if(inputObject.containsKey(JsonKey::Text)){
-        this->text = inputObject[JsonKey::Text].as<String>();
+        this->text = inputObject[JsonKey::Text].as<const char*>();
       } else initializedOK = false;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::TextColor)){
-        this->textColor = inputObject[JsonKey::TextColor].as<String>();
+        this->textColor = inputObject[JsonKey::TextColor].as<const char*>();
       } else this->textColor = DefaultValues::TextColor;
       if(inputObject.containsKey(JsonKey::IsVertical)){
         this->isVertical = inputObject[JsonKey::IsVertical];
@@ -666,10 +572,10 @@ namespace Website {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else fontSize = DefaultValues::FontSize;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Value)){
-        this->value = inputObject[JsonKey::Value].as<String>();
+        this->value = inputObject[JsonKey::Value].as<const char*>();
       } else this->value = "";
     }
 
@@ -690,10 +596,10 @@ namespace Website {
         this->fontSize = object[JsonKey::FontSize];
       }
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
       if(object.containsKey(JsonKey::Value)){
-        this->value = object[JsonKey::Value].as<String>();
+        this->value = object[JsonKey::Value].as<const char*>();
       }
     }
 
@@ -725,7 +631,7 @@ namespace Website {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::Width)){
         this->width = inputObject[JsonKey::Width];
@@ -755,7 +661,7 @@ namespace Website {
         this->value = object[JsonKey::Value];
       } else this->value = 0;
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -779,7 +685,7 @@ namespace Website {
         this->size = inputObject[JsonKey::Size];
       } else this->size = 10;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::LedColor;
     }
 
@@ -800,7 +706,7 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
     }
 
@@ -814,32 +720,32 @@ namespace Website {
   class ProgressBar : public OutputComponent{
   public:
     explicit ProgressBar(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::MinValue)){
+      : OutputComponent(inputObject) {
+      if(inputObject.containsKey(JsonKey::MinValue)) {
         this->minValue = inputObject[JsonKey::MinValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::MaxValue)){
+      if(inputObject.containsKey(JsonKey::MaxValue)) {
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Value)){
+      if(inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+      if(inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color2;
-      if(inputObject.containsKey(JsonKey::Width)){
+      if(inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if(inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::BarHeight;
-      if(inputObject.containsKey(JsonKey::IsVertical)){
+      if(inputObject.containsKey(JsonKey::IsVertical)) {
         this->isVertical = inputObject[JsonKey::IsVertical];
       } else this->isVertical = DefaultValues::IsVertical;
     }
 
 
-    JsonObject toWebsiteJson() override{
+    JsonObject toWebsiteJson() override {
       JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
@@ -860,7 +766,8 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color.clear();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
     }
   private:
@@ -884,14 +791,14 @@ namespace Website {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::Height;
       if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<String>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if(inputObject.containsKey(JsonKey::FieldOutlineColor)){
-        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<String>();
+        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<const char*>();
       } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
 
-    JsonObject toWebsiteJson() override{
+    JsonObject toWebsiteJson() override {
       JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
@@ -903,7 +810,7 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
       return websiteObj;
     }
-    void setState(const JsonObjectConst& object) override{
+    void setState(const JsonObjectConst& object) override {
       if(object.containsKey(JsonKey::Color)){
         this->color = object[JsonKey::Color].as<String>();
       }
@@ -934,6 +841,7 @@ namespace Website {
     void garbageCollect();
     const String& getTitle() const {return this->title;}
     void setTitle(const String& nTitle) {this->title = nTitle;}
+
     static void setJsonMemory(CommonJsonMemory* mem);
     static void setJsonMemoryForVisuino(CommonJsonMemory* mem);
     static void lockJsonMemory();
@@ -953,8 +861,8 @@ namespace Website {
     std::vector<WebsiteComponent*> components;
     String title;
     static CommonJsonMemory* jsonMemory;                        // main JSON memory, used for preparing data to /input HTTP request, size is all components size * 2 (common with parsing json)
-    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 point on the same as "jsonMemory"
-  };
+    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 points on the same as "jsonMemory"
+};
 
   CommonJsonMemory* Card::jsonMemory;
   CommonJsonMemory* Card::outputJsonMemory;
@@ -1438,8 +1346,7 @@ namespace JsonReader {
   };
 
   bool validateJson(const String& json){
-    if(json.isEmpty() || json.indexOf(JsonKey::Name) < 0) return false;
-    return true;
+    return !(json.isEmpty() || json.indexOf(JsonKey::Name) < 0);
   }
 
   size_t getBiggestObjectSize(const JsonArrayConst& arr){
@@ -1473,6 +1380,7 @@ namespace JsonReader {
   }
 
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
+    using namespace Website;
     static bool isValid = false;
     static bool isInitialized = false;
     static bool isElementsInitialized = false;
@@ -1511,7 +1419,7 @@ namespace JsonReader {
 
           if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           if(componentJsonMemory.allocate(getBufferSize(biggestObjectSize))){
-            Website::WebsiteComponent::setJsonMemory(&componentJsonMemory);
+            WebsiteComponent::setJsonMemory(&componentJsonMemory);
             isElementsInitialized = true;
           } else {
             componentJsonMemory.garbageCollect();
@@ -1522,10 +1430,10 @@ namespace JsonReader {
         card.reserve(elements.size());
         for (JsonObject element : elements) {
           auto res = card.add(element);
-          if(res == Website::Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
+          if(res == Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
             return releaseAndReturn(InputJsonStatus::COMPONENT_TYPE_NOT_FOUND);
           }
-          else if (res != Website::Card::ComponentStatus::OK) {
+          else if (res != Card::ComponentStatus::OK) {
             return releaseAndReturn(InputJsonStatus::OBJECT_NOT_VALID);
           }
         }
@@ -1668,15 +1576,27 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
     using namespace Website;
-    if(Card::isMemoryReadyToUse()){
+#ifdef DEBUG_BUILD
+    Log::info("Proccessing info request");
+#endif
+    if(Card::isMemoryReadyToUse()) {
+#ifdef DEBUG_BUILD
+      Log::info("mem ok, request resolved");
+#endif
       Card::lockJsonMemory();
-      auto onRequest = card.onHTTPRequest()[JsonKey::Body];
-      if(onRequest.is<JsonArray>()) Serial.println("is array");
-      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", onRequest);
+      static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
+      responseBody.clear();
+      serializeJson(card.onHTTPRequest()[JsonKey::Body], responseBody);
+      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
       Card::releaseJsonMemory();
-    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+    } else {
+#ifdef DEBUG_BUILD
+      Log::info("mem locked, no content");
+#endif
+      request->send(HTTP_STATUS_OK_NO_CONTENT);
+    }
   });
 
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
@@ -1695,18 +1615,32 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   });
 }
 
+#if DEBUG_BUILD
+void registerWiFIDebugEvents(void){
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("AP connected!");
+  },SYSTEM_EVENT_AP_STACONNECTED);
+
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("AP_Disconnected!");
+  },SYSTEM_EVENT_AP_STADISCONNECTED);
+
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("STA_Connected");
+  }, SYSTEM_EVENT_STA_CONNECTED);
+  WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
+    Log::info("STA_Disconnected");
+  }, SYSTEM_EVENT_STA_DISCONNECTED);
+}
+#endif
 
 
 void ServerInit(){
-  WiFiConfig::setIsAccessPoint(true);
-  WiFiConfig::setSsid("esp_ap");
-  WiFiConfig::setPassword("123456789");
-  WiFiConfig::init();
+#if DEBUG_BUILD
+  registerWiFIDebugEvents();
+#endif
 
-/*  WiFiConfig::setIsAccessPoint(false);
-  WiFiConfig::setSsid("NET-MAR_619");
-  WiFiConfig::setPassword("bielaki123424G");
-  WiFiConfig::init();*/
+
 
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
@@ -1723,19 +1657,18 @@ void setup(){
   if(!SPIFFS.exists("/index.html")) {
     Serial.println("index.html not found");
   }
-  WebsiteServer::ServerInit();
 
+  WiFi.softAP("esp_ap", "123456789");
+  WebsiteServer::ServerInit();
   uint32_t before = millis();
   using namespace WebsiteServer;
   using namespace WebsiteServer::JsonReader;
-  InputJsonStatus status = WebsiteServer::JsonReader::readWebsiteComponentsFromJson(WebsiteServer::testWebsiteConfigStr);
-  WebsiteServer::testWebsiteConfigStr.clear();
-  const char* msg = errorHandler(status);
-  if(status != InputJsonStatus::OK) Log::error(msg);
+  InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
+  testWebsiteConfigStr.clear();
+  Log::info(errorHandler(status));
   uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
-  WebsiteServer::Log::error("error test", Serial);
 }
 
 
