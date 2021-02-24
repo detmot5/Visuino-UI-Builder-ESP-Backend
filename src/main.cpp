@@ -24,9 +24,13 @@
 namespace WebsiteServer {
   
 AsyncWebServer server(80);
+AsyncWebSocket dataSocket("/dataSocket");
+AsyncWebSocket statusSocket("/statusSocket");             // to send information about data transmission fails and successes
 
 
-const uint8_t CONNECT_ATTEMPTS_MAX = 10;
+const char* CLIENT_MESSAGE_OK PROGMEM = "OK";
+const char* CLIENT_MESSAGE_FAIL PROGMEM = "FAIL";
+
 
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN PROGMEM = "Access-Control-Allow-Origin";
 const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS PROGMEM = "Access-Control-Allow-Methods";
@@ -217,9 +221,7 @@ namespace Website {
     const String& getName() const  {return name;}
 
     static void setJsonMemory (CommonJsonMemory* mem);
-    static void lockJsonMemory();
-    static void releaseJsonMemory();
-    static bool isMemoryReadyToUse();
+    static CommonJsonMemory* getComponentJsonMemory() { return jsonMemory; }
   protected:
     static CommonJsonMemory* jsonMemory;
     bool initializedOK;
@@ -257,19 +259,6 @@ namespace Website {
     if ( mem != nullptr ) {
       jsonMemory = mem;
     }
-  }
-
-  void WebsiteComponent::lockJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->lock();
-  }
-
-  void WebsiteComponent::releaseJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->unlock();
-  }
-
-  bool WebsiteComponent::isMemoryReadyToUse() {
-    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
-    else return false;
   }
 
   // ----------------------------------------------------------------------------
@@ -852,6 +841,9 @@ namespace Website {
     static void releaseOutputJsonMemory();
     static bool isOutputMemoryReadyToUse();
 
+    static CommonJsonMemory* getJsonMemory() { return jsonMemory; }
+    static CommonJsonMemory* getOutputJsonMemory() { return outputJsonMemory; }
+
   private:
     template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
     template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
@@ -904,12 +896,13 @@ namespace Website {
     //jsonMemory should be already locked before calling this func!!
     JsonObject object = jsonMemory->get()->to<JsonObject>();
     JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
-    if(WebsiteComponent::isMemoryReadyToUse()){
-      WebsiteComponent::lockJsonMemory();     // lock component memory
+    auto componentJsonMemory = WebsiteComponent::getComponentJsonMemory();
+    if(componentJsonMemory->isReadyToUse()){
+      componentJsonMemory->lock();     // lock component memory
       for(auto component : this->components) {
         elements.add(component->toWebsiteJson());
       }
-      WebsiteComponent::releaseJsonMemory(); // components are copied to main memory, so we can release it.
+      componentJsonMemory->unlock(); // components are copied to main memory, so we can release it.
     }
     return object;
   }
@@ -950,7 +943,7 @@ namespace Website {
   }
 
 
-  WebsiteComponent* Card::getComponentByName(const char *name) {
+  WebsiteComponent* Card::getComponentByName(const char* name) {
     for(auto component : this->components){
       if(component->getName().equals(name)) return component;
     }
@@ -959,6 +952,10 @@ namespace Website {
 
   void Card::setJsonMemory(CommonJsonMemory* mem) {
     jsonMemory = mem;
+  }
+
+  void Card::setJsonMemoryForVisuino(CommonJsonMemory* mem) {
+    outputJsonMemory = mem;
   }
 
   template<typename componentType>
@@ -999,44 +996,14 @@ namespace Website {
     auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
     if(component == nullptr) return false;
     component->setState(object);
-    if(WebsiteComponent::isMemoryReadyToUse()){
-      WebsiteComponent::lockJsonMemory();
+    auto componentJsonMemory = WebsiteComponent::getComponentJsonMemory();
+    if(componentJsonMemory->isReadyToUse()){
+      componentJsonMemory->lock();
       componentType::setVisuinoOutput(component->toVisuinoJson());
-      WebsiteComponent::releaseJsonMemory();
+      componentJsonMemory->unlock();
     } else return false;
     return true;
   }
-
-  void Card::lockJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->lock();
-  }
-
-  void Card::releaseJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->unlock();
-  }
-
-  bool Card::isMemoryReadyToUse() {
-    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
-    else return false;
-  }
-
-  void Card::setJsonMemoryForVisuino(CommonJsonMemory *mem) {
-    outputJsonMemory = mem;
-  }
-
-  void Card::lockOutputJsonMemory() {
-    if(outputJsonMemory != nullptr) outputJsonMemory->lock();
-  }
-
-  void Card::releaseOutputJsonMemory() {
-    if(outputJsonMemory != nullptr) outputJsonMemory->unlock();
-  }
-
-  bool Card::isOutputMemoryReadyToUse() {
-    if(outputJsonMemory != nullptr) return outputJsonMemory->isReadyToUse();
-    return false;
-  }
-
 
 }
 
@@ -1446,7 +1413,7 @@ namespace JsonReader {
   }
 
 
-  const char* errorHandler(InputJsonStatus status){
+  const char* hanndleJsonReadErrors(InputJsonStatus status){
     using namespace ErrorMessage::JsonInput;
     const char* statusStr = nullptr;
     switch (status) {
@@ -1514,6 +1481,53 @@ namespace JsonWriter{
   }
 }
 
+namespace WebSocketIO {
+  void onReceive(AsyncWebSocket* server, AsyncWebSocketClient* client,
+                 AwsEventType type, void* arg, uint8_t* data, size_t len) {
+    Serial.println("on receive");
+    if (type == WS_EVT_DATA) {
+      auto json = Website::Card::getOutputJsonMemory();
+      if (json->isReadyToUse()) {
+        Serial.println("Received");
+        json->lock();
+        bool parsingResult = WebsiteServer::card.onComponentStatusHTTPRequest(data, len);
+        statusSocket.text(client->id(), parsingResult ? CLIENT_MESSAGE_OK : CLIENT_MESSAGE_FAIL);
+        json->unlock();
+      } else {
+        Serial.println("Json not ready");
+      }
+    }
+  }
+  void sendWebsiteData() {
+    static String websiteData;
+    auto json = Website::Card::getJsonMemory();
+    if(json->isReadyToUse()) {
+      json->lock();
+      serializeJson(WebsiteServer::card.onHTTPRequest()[JsonKey::Body], websiteData);
+      if(dataSocket.availableForWriteAll()) {
+        Serial.println("Writeall");
+        dataSocket.textAll(websiteData);
+        Serial.println("Writed");
+      }
+      websiteData.clear();
+      json->unlock();
+    }
+  }
+
+
+  // TODO: params only in debug builds to run it using RTOS task - should be deleted in visuino
+  void onVisuinoInput(void* params) {
+    while (true) {
+      JsonReader::hanndleJsonReadErrors(JsonReader::readWebsiteComponentsFromJson(testWebsiteConfigStr));
+      sendWebsiteData();
+      vTaskDelay(500 / portTICK_RATE_MS);
+    }
+  }
+
+
+}
+
+
 
 
 void fullCorsAllow(AsyncWebServerResponse* response){
@@ -1548,6 +1562,10 @@ void HTTPServeWebsite(AsyncWebServer& webServer){
 #endif
   });
 
+  webServer.on("/webSocketIO.js", HTTP_GET, [] (AsyncWebServerRequest* request) {
+    request->send(SPIFFS, "/webSocketIO.js", "application/javascript");
+  });
+
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
 #ifdef DEBUG_MODE
@@ -1572,46 +1590,6 @@ void HTTPSetMappings(AsyncWebServer& webServer){
       request->send(HTTP_STATUS_OK, "text/plain", title);
     } else request->send(HTTP_STATUS_OK_NO_CONTENT);
 #endif
-  });
-
-  webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
-    using namespace Website;
-#ifdef DEBUG_BUILD
-    Log::info("Proccessing info request");
-#endif
-    if(Card::isMemoryReadyToUse()) {
-#ifdef DEBUG_BUILD
-      Log::info("mem ok, request resolved");
-#endif
-      Card::lockJsonMemory();
-      static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
-      responseBody.clear();
-      serializeJson(card.onHTTPRequest()[JsonKey::Body], responseBody);
-      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
-      fullCorsAllow(response);
-      request->send(response);
-      Card::releaseJsonMemory();
-    } else {
-#ifdef DEBUG_BUILD
-      Log::info("mem locked, no content");
-#endif
-      request->send(HTTP_STATUS_OK_NO_CONTENT);
-    }
-  });
-
-  webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
-          [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
-    using namespace Website;
-    if(Card::isOutputMemoryReadyToUse()){
-      Card::lockOutputJsonMemory();
-      if(card.onComponentStatusHTTPRequest(data, len)){
-        request->send(HTTP_STATUS_OK);
-      } else {
-        Log::error("Error while parsing input component");
-        request->send(HTTP_STATUS_BAD_REQUEST);
-      }
-      Card::releaseOutputJsonMemory();
-    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
   });
 }
 
@@ -1639,11 +1617,11 @@ void ServerInit(){
 #if DEBUG_BUILD
   registerWiFIDebugEvents();
 #endif
-
-
-
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
+  server.addHandler(&dataSocket);
+  server.addHandler(&statusSocket);
+  dataSocket.onEvent(WebSocketIO::onReceive);
   server.begin();
   Log::errorStream.reserve(100);
 }
@@ -1660,15 +1638,17 @@ void setup(){
 
   WiFi.softAP("esp_ap", "123456789");
   WebsiteServer::ServerInit();
-  uint32_t before = millis();
-  using namespace WebsiteServer;
-  using namespace WebsiteServer::JsonReader;
-  InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
-  testWebsiteConfigStr.clear();
-  Log::info(errorHandler(status));
-  uint32_t after = millis();
-  Serial.print("Execution time: ");
-  Serial.println(after - before);
+  TaskHandle_t handle = nullptr;
+
+
+  xTaskCreate(WebsiteServer::WebSocketIO::onVisuinoInput,
+                          "Proc",
+                          2048,
+                          nullptr,
+                          tskIDLE_PRIORITY,
+                          &handle);
+
+
 }
 
 
