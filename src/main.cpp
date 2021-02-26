@@ -36,10 +36,15 @@ const char* CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS PROGMEM = "Access-Control-A
 const char* CORS_ALLOWED_HEADERS PROGMEM = "Origin, X-Requested-With, Content-Type, Accept";
 
 
-const uint16_t HTTP_STATUS_OK PROGMEM = 200;
-const uint16_t HTTP_STATUS_OK_NO_CONTENT PROGMEM = 204;
-const uint16_t HTTP_STATUS_BAD_REQUEST PROGMEM = 400;
-const uint16_t HTTP_STATUS_INTERNAL_SERVER_ERROR PROGMEM = 500;
+namespace HttpCodes {
+  const uint16_t OK PROGMEM = 200;
+  const uint16_t NO_CONTENT PROGMEM = 204;
+  const uint16_t BAD_REQUEST PROGMEM = 400;
+  const uint16_t NOT_FOUND PROGMEM = 404;
+  const uint16_t PAYLOAD_TOO_LARGE PROGMEM = 413;
+  const uint16_t INTERNAL_SERVER_ERROR PROGMEM = 500;
+}
+
 
 
 
@@ -73,6 +78,7 @@ namespace ComponentType {
     const char* Gauge PROGMEM = "gauge";
     const char* ProgressBar PROGMEM = "progressBar";
     const char* Field PROGMEM = "field";
+    const char* Image PROGMEM = "image";
   }
 }
 
@@ -96,6 +102,8 @@ namespace JsonKey {
   const char* IsVertical PROGMEM = "isVertical";
   const char* Size PROGMEM = "size";
   const char* FieldOutlineColor PROGMEM = "outlineColor";
+  const char* FileName PROGMEM = "fileName";
+
 
   const char* MaxValue PROGMEM = "maxValue";
   const char* MinValue PROGMEM = "minValue";
@@ -822,6 +830,40 @@ namespace Website {
     String outlineColor;
   };
 
+  class BackgroundImage : public OutputComponent {
+  public:
+    explicit BackgroundImage(const JsonObjectConst& inputObject)
+            : OutputComponent(inputObject){
+      if (inputObject.containsKey(JsonKey::FileName)) {
+        this->filePath = inputObject[JsonKey::FileName].as<const char*>();
+      } else initializedOK = false;
+      if (inputObject.containsKey(JsonKey::Width)) {
+        this->width = inputObject[JsonKey::Width];
+      } else this->width = 0;
+      if (inputObject.containsKey(JsonKey::Height)) {
+        this->height = inputObject[JsonKey::Height];
+      } else this->height = 0;
+
+    }
+    JsonObject toWebsiteJson() override {
+      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      websiteObj[JsonKey::Name] = this->name;
+      websiteObj[JsonKey::PosX] = this->posX;
+      websiteObj[JsonKey::PosY] = this->posY;
+      websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::Height] = this->height;
+      websiteObj[JsonKey::FileName] = this->filePath;
+      websiteObj[JsonKey::ComponentType] = ComponentType::Output::Image;
+      return websiteObj;
+    }
+
+    void setState(const JsonObjectConst& object) override {}   // image doesn't have state
+  private:
+    uint16_t width;
+    uint16_t height;
+    String filePath;
+  };
+
 
 
   class Card {
@@ -892,6 +934,8 @@ namespace Website {
       parseOutputComponentToWebsite<ProgressBar>(object);
     } else if(!strncmp(componentType, Output::Field, strlen(componentType))){
       parseOutputComponentToWebsite<ColorField>(object);
+    } else if(!strncmp(componentType, Output::Image, strlen(componentType))) {
+      parseOutputComponentToWebsite<BackgroundImage>(object);
     }
 
     else {
@@ -1316,6 +1360,15 @@ String testWebsiteConfigStr = {R"(
         "color" : "blue",
         "value": "Button2",
         "fontSize" : "25"
+      },
+      {
+        "name": "image1",
+        "width": 0,
+        "height" : 0,
+        "componentType": "image",
+        "posY": 0,
+        "posX": 0,
+        "fileName": "test.jpg"
       }
   ]
 })"};
@@ -1565,12 +1618,12 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
 #ifdef DEBUG_BUILD
-    request->send(HTTP_STATUS_OK, "text/plain", "Debug Build");
+    request->send(HttpCodes::OK, "text/plain", "Debug Build");
 #else
     const String& title = card.getTitle();
     if (!title.isEmpty() || title.equals("")){
-      request->send(HTTP_STATUS_OK, "text/plain", title);
-    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+      request->send(HttpCodes::OK, "text/plain", title);
+    } else request->send(HttpCodes::NO_CONTENT);
 #endif
   });
 
@@ -1587,7 +1640,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
       static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
       responseBody.clear();
       serializeJson(card.onHTTPRequest()[JsonKey::Body], responseBody);
-      AsyncWebServerResponse* response = request->beginResponse(HTTP_STATUS_OK, "application/json", responseBody);
+      AsyncWebServerResponse* response = request->beginResponse(HttpCodes::OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
       Card::releaseJsonMemory();
@@ -1595,7 +1648,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 #ifdef DEBUG_BUILD
       Log::info("mem locked, no content");
 #endif
-      request->send(HTTP_STATUS_OK_NO_CONTENT);
+      request->send(HttpCodes::NO_CONTENT);
     }
   });
 
@@ -1605,13 +1658,41 @@ void HTTPSetMappings(AsyncWebServer& webServer){
     if(Card::isOutputMemoryReadyToUse()){
       Card::lockOutputJsonMemory();
       if(card.onComponentStatusHTTPRequest(data, len)){
-        request->send(HTTP_STATUS_OK);
+        request->send(HttpCodes::OK);
       } else {
         Log::error("Error while parsing input component");
-        request->send(HTTP_STATUS_BAD_REQUEST);
+        request->send(HttpCodes::BAD_REQUEST);
       }
       Card::releaseOutputJsonMemory();
-    } else request->send(HTTP_STATUS_OK_NO_CONTENT);
+    } else request->send(HttpCodes::NO_CONTENT);
+  });
+
+  webServer.on("/image", HTTP_GET, [] (AsyncWebServerRequest* request) {
+    Log::info("image req", Serial);
+    if (request->hasParam(F("fileName"))) {
+      Log::info("Has Param", Serial);
+      const String& fileName = request->getParam("fileName")->value();
+      Log::info(fileName.c_str());
+      if(SPIFFS.exists(fileName)) {
+        File f = SPIFFS.open(fileName);
+        if(f.size() > ESP.getFreeHeap() || f.size() > 100000) {
+          request->send(HttpCodes::PAYLOAD_TOO_LARGE); /// payload too large
+          Log::error("Requested file is too large or system has not enough memory", Serial);
+          f.close();
+        } else {
+          f.close();
+          AsyncWebServerResponse* response = request->beginResponse(SPIFFS, fileName, "image/jpg");
+          response->setCode(HttpCodes::OK);
+          request->send(response);
+        }
+      } else {
+        Log::error("Requested file not found!", Serial);
+        request->send(HttpCodes::NOT_FOUND);
+      }
+    } else {
+      Log::error("Client not provided proper param");
+      request->send(HttpCodes::BAD_REQUEST);
+    }
   });
 }
 
@@ -1659,6 +1740,9 @@ void setup(){
   }
 
   WiFi.softAP("esp_ap", "123456789");
+  WiFi.begin("NET-MAR_619", "bielaki123424G");
+  while(WiFi.status() != WL_CONNECTED) delay(100);
+  Serial.println(WiFi.localIP());
   WebsiteServer::ServerInit();
   uint32_t before = millis();
   using namespace WebsiteServer;
