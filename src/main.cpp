@@ -24,7 +24,7 @@
 namespace WebsiteServer {
   
 AsyncWebServer server(80);
-
+const uint32_t IMAGE_MAX_SIZE = 100000;
 
 const uint8_t CONNECT_ATTEMPTS_MAX = 10;
 
@@ -820,7 +820,7 @@ namespace Website {
     }
     void setState(const JsonObjectConst& object) override {
       if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<String>();
+        this->color = object[JsonKey::Color].as<const char*>();
       }
     }
   private:
@@ -915,30 +915,28 @@ namespace Website {
     if(strlen(componentType) < 1) return ComponentStatus::COMPONENT_TYPE_NOT_FOUND;
     using namespace ComponentType;
 
-    if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
+    if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
       parseInputComponentToWebsite<Switch>(object);
-    } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
+    } else if (!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
       parseInputComponentToWebsite<NumberInput>(object);
-    } else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
+    } else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
       parseInputComponentToWebsite<Slider>(object);
-    } else if(!strncmp(componentType, Input::Button, strlen(componentType))){
+    } else if (!strncmp(componentType, Input::Button, strlen(componentType))) {
       parseInputComponentToWebsite<Button>(object);
     }
-    else if(!strncmp(componentType, Output::Label, strlen(componentType))){
+    else if (!strncmp(componentType, Output::Label, strlen(componentType))) {
       parseOutputComponentToWebsite<Label>(object);
-    } else if(!strncmp(componentType, Output::Gauge, strlen(componentType))){
+    } else if (!strncmp(componentType, Output::Gauge, strlen(componentType))) {
       parseOutputComponentToWebsite<Gauge>(object);
-    } else if(!strncmp(componentType, Output::Indicator, strlen(componentType))){
+    } else if (!strncmp(componentType, Output::Indicator, strlen(componentType))) {
       parseOutputComponentToWebsite<LedIndicator>(object);
-    } else if(!strncmp(componentType, Output::ProgressBar, strlen(componentType))){
+    } else if (!strncmp(componentType, Output::ProgressBar, strlen(componentType))) {
       parseOutputComponentToWebsite<ProgressBar>(object);
-    } else if(!strncmp(componentType, Output::Field, strlen(componentType))){
+    } else if (!strncmp(componentType, Output::Field, strlen(componentType))) {
       parseOutputComponentToWebsite<ColorField>(object);
-    } else if(!strncmp(componentType, Output::Image, strlen(componentType))) {
+    } else if (!strncmp(componentType, Output::Image, strlen(componentType))) {
       parseOutputComponentToWebsite<BackgroundImage>(object);
-    }
-
-    else {
+    } else {
       return ComponentStatus::OBJECT_NOT_VALID;
     }
     return ComponentStatus::OK;
@@ -963,13 +961,13 @@ namespace Website {
     auto receivedJson = outputJsonMemory->get()->as<JsonObject>();
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
-    if(!strncmp(componentType, Input::Switch, strlen(componentType))) {
+    if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
       return parseInputComponentToVisuino<Switch>(receivedJson);
-    }else if(!strncmp(componentType, Input::Slider, strlen(componentType))){
+    }else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
       return parseInputComponentToVisuino<Slider>(receivedJson);
-    } else if(!strncmp(componentType, Input::NumberInput, strlen(componentType))){
+    } else if (!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
       return parseInputComponentToVisuino<NumberInput>(receivedJson);
-    } else if(!strncmp(componentType, Input::Button, strlen(componentType))){
+    } else if (!strncmp(componentType, Input::Button, strlen(componentType))) {
       return parseInputComponentToVisuino<Button>(receivedJson);
     }
     return false;
@@ -978,7 +976,7 @@ namespace Website {
 
   bool Card::componentAlreadyExists(const char* componentName) {
     bool res = false;
-    if(getComponentByName(componentName) != nullptr) res = true;
+    if (getComponentByName(componentName) != nullptr) res = true;
     return res;
 
   }
@@ -1026,9 +1024,9 @@ namespace Website {
   template<typename componentType>
   bool Card::parseInputComponentToWebsite(const JsonObjectConst& object) {
     const char* componentName = object[JsonKey::Name];
-    if(!componentAlreadyExists(componentName)){
+    if (!componentAlreadyExists(componentName)) {
       auto component = new componentType(object);
-      if(component->isInitializedOK()) components.push_back(component);
+      if (component->isInitializedOK()) components.push_back(component);
       else {
         delete component;
         return false;
@@ -1041,9 +1039,9 @@ namespace Website {
   bool Card::parseInputComponentToVisuino(const JsonObjectConst& object) {
     const char* componentName = object[JsonKey::Name];
     auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
-    if(component == nullptr) return false;
+    if (component == nullptr) return false;
     component->setState(object);
-    if(WebsiteComponent::isMemoryReadyToUse()){
+    if (WebsiteComponent::isMemoryReadyToUse()) {
       WebsiteComponent::lockJsonMemory();
       componentType::setVisuinoOutput(component->toVisuinoJson());
       WebsiteComponent::releaseJsonMemory();
@@ -1052,15 +1050,15 @@ namespace Website {
   }
 
   void Card::lockJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->lock();
+    if (jsonMemory != nullptr) jsonMemory->lock();
   }
 
   void Card::releaseJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->unlock();
+    if (jsonMemory != nullptr) jsonMemory->unlock();
   }
 
   bool Card::isMemoryReadyToUse() {
-    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
+    if (jsonMemory != nullptr) return jsonMemory->isReadyToUse();
     else return false;
   }
 
@@ -1069,21 +1067,19 @@ namespace Website {
   }
 
   void Card::lockOutputJsonMemory() {
-    if(outputJsonMemory != nullptr) outputJsonMemory->lock();
+    if (outputJsonMemory != nullptr) outputJsonMemory->lock();
   }
 
   void Card::releaseOutputJsonMemory() {
-    if(outputJsonMemory != nullptr) outputJsonMemory->unlock();
+    if (outputJsonMemory != nullptr) outputJsonMemory->unlock();
   }
 
   bool Card::isOutputMemoryReadyToUse() {
-    if(outputJsonMemory != nullptr) return outputJsonMemory->isReadyToUse();
+    if (outputJsonMemory != nullptr) return outputJsonMemory->isReadyToUse();
     return false;
   }
 
-
 }
-
 
 String testWebsiteConfigStr = {R"(
 {
@@ -1374,7 +1370,6 @@ String testWebsiteConfigStr = {R"(
 })"};
 
 
-
 Website::Card card;
 
 namespace JsonReader {
@@ -1538,6 +1533,7 @@ namespace JsonReader {
   }
 }
 
+
 namespace JsonWriter{
   void write() {
     using namespace Website;
@@ -1569,61 +1565,62 @@ namespace JsonWriter{
 
 
 
-void fullCorsAllow(AsyncWebServerResponse* response){
+void fullCorsAllow(AsyncWebServerResponse* response) {
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_METHODS, CORS_ALLOWED_METHODS);
   response->addHeader(CORS_HEADER_ACCESS_CONTROL_ALLOW_HEADERS, CORS_ALLOWED_HEADERS);
 }
 
-void HTTPServeWebsite(AsyncWebServer& webServer){
+void HTTPServeWebsite(AsyncWebServer& webServer) {
 
   webServer.on("/", HTTP_GET, [](AsyncWebServerRequest* request){
     request->send(SPIFFS, "/index.html");
   });
 
   webServer.on("/index.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/index.css","text/css");
+    request->send(SPIFFS, "/index.css", "text/css");
   });
 
   webServer.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/index.js","application/javascript");
+    request->send(SPIFFS, "/index.js", "application/javascript");
   });
 
   webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/component.css","text/css");
+    request->send(SPIFFS, "/component.css", "text/css");
   });
 
   webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/component.js","application/javascript");
-#ifdef DEBUG_MODE
+    request->send(SPIFFS, "/component.js", "application/javascript");
+#ifdef DEBUG_BUILD
     Log::info("Component", Serial);
     Log::memoryInfo(Serial);
 #endif
   });
 
   webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/pureknobMin.js","application/javascript");
-#ifdef DEBUG_MODE
+    request->send(SPIFFS, "/Libs/pureknobMin.js", "application/javascript");
+#ifdef DEBUG_BUILD
     Log::info("Knob", Serial);
     Log::memoryInfo(Serial);
 #endif
   });
 
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/favicon.ico","image/ico");
+      request->send(SPIFFS, "/favicon.ico", "image/ico");
   });
 }
 
-void HTTPSetMappings(AsyncWebServer& webServer){
+void HTTPSetMappings(AsyncWebServer& webServer) {
 
   webServer.on("/init", HTTP_GET, [] (AsyncWebServerRequest* request){
 #ifdef DEBUG_BUILD
-    request->send(HttpCodes::OK, "text/plain", "Debug Build");
+  request->send(HttpCodes::OK, "text/plain", "Debug Build");
 #else
-    const String& title = card.getTitle();
-    if (!title.isEmpty() || title.equals("")){
-      request->send(HttpCodes::OK, "text/plain", title);
-    } else request->send(HttpCodes::NO_CONTENT);
+
+  const String& title = card.getTitle();
+  if (!title.isEmpty() || title.equals("")){
+    request->send(HttpCodes::OK, "text/plain", title);
+  } else request->send(HttpCodes::NO_CONTENT);
 #endif
   });
 
@@ -1632,7 +1629,7 @@ void HTTPSetMappings(AsyncWebServer& webServer){
 #ifdef DEBUG_BUILD
     Log::info("Proccessing info request");
 #endif
-    if(Card::isMemoryReadyToUse()) {
+    if (Card::isMemoryReadyToUse()) {
 #ifdef DEBUG_BUILD
       Log::info("mem ok, request resolved");
 #endif
@@ -1655,28 +1652,30 @@ void HTTPSetMappings(AsyncWebServer& webServer){
   webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
     using namespace Website;
-    if(Card::isOutputMemoryReadyToUse()){
+    if (Card::isOutputMemoryReadyToUse()) {
       Card::lockOutputJsonMemory();
-      if(card.onComponentStatusHTTPRequest(data, len)){
+      if (card.onComponentStatusHTTPRequest(data, len)) {
         request->send(HttpCodes::OK);
       } else {
         Log::error("Error while parsing input component");
         request->send(HttpCodes::BAD_REQUEST);
       }
       Card::releaseOutputJsonMemory();
-    } else request->send(HttpCodes::NO_CONTENT);
+    } else {
+        request->send(HttpCodes::NO_CONTENT);
+    }
   });
 
   webServer.on("/image", HTTP_GET, [] (AsyncWebServerRequest* request) {
     Log::info("image req", Serial);
-    if (request->hasParam(F("fileName"))) {
+    if (request->hasParam("fileName")) {
       Log::info("Has Param", Serial);
       const String& fileName = request->getParam("fileName")->value();
       Log::info(fileName.c_str());
-      if(SPIFFS.exists(fileName)) {
-        File f = SPIFFS.open(fileName);
-        if(f.size() > ESP.getFreeHeap() || f.size() > 100000) {
-          request->send(HttpCodes::PAYLOAD_TOO_LARGE); /// payload too large
+      if (SPIFFS.exists(fileName)) {
+        File f = SPIFFS.open(fileName, "r");
+        if (f.size() > IMAGE_MAX_SIZE) {
+          request->send(HttpCodes::PAYLOAD_TOO_LARGE);  
           Log::error("Requested file is too large or system has not enough memory", Serial);
           f.close();
         } else {
@@ -1689,22 +1688,22 @@ void HTTPSetMappings(AsyncWebServer& webServer){
         Log::error("Requested file not found!", Serial);
         request->send(HttpCodes::NOT_FOUND);
       }
-    } else {
-      Log::error("Client not provided proper param");
-      request->send(HttpCodes::BAD_REQUEST);
-    }
+      } else {
+        Log::error("Client not provided proper param");
+        request->send(HttpCodes::BAD_REQUEST);
+      }
   });
 }
 
-#if DEBUG_BUILD
-void registerWiFIDebugEvents(void){
+#if DEBUG_BUILD && ESP32
+void registerWiFIDebugEvents(void) {
   WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
     Log::info("AP connected!");
-  },SYSTEM_EVENT_AP_STACONNECTED);
+  }, SYSTEM_EVENT_AP_STACONNECTED);
 
   WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
     Log::info("AP_Disconnected!");
-  },SYSTEM_EVENT_AP_STADISCONNECTED);
+  }, SYSTEM_EVENT_AP_STADISCONNECTED);
 
   WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
     Log::info("STA_Connected");
@@ -1717,7 +1716,7 @@ void registerWiFIDebugEvents(void){
 
 
 void ServerInit(){
-#if DEBUG_BUILD
+#if DEBUG_BUILD && ESP32
   registerWiFIDebugEvents();
 #endif
 
