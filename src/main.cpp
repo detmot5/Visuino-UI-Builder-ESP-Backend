@@ -870,34 +870,151 @@ namespace Website {
 
   class WebsiteTab {
   public:
-    WebsiteTab(const char* name, const JsonArrayConst elements);
-    ~WebsiteTab() = default;
-
+    enum class ComponentParsingStatus : uint8_t {
+      OK,
+      OBJECT_NOT_VALID,
+      COMPONENT_TYPE_NOT_FOUND,
+    };
+  public:
+    WebsiteTab(const char* name, const JsonArrayConst componentsJson);
+    ~WebsiteTab() { this->garbageCollect(); }
+    ComponentParsingStatus appendComponent(const JsonObjectConst& object);
     void onApplicationStateHttpRequest(CommonJsonMemory* target);
 
+  public:
+    static inline void setStateJsonRef(CommonJsonMemory* ref) {stateJsonMemoryWeakRef = ref;}
+    static inline void setVisuinoJsonRef(CommonJsonMemory* ref) {visuinoJsonMemoryWeakRef = ref;}
+
+  private:
+    template <typename ComponentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
+    template <typename ComponentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
+    template <typename ComponentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
+    WebsiteComponent* getComponentByName(const char* name);
+    bool componentAlreadyExists(const char* componentName);
+    inline void garbageCollect() { for (auto& component : components) delete component; }
   private:
     String name;
     std::vector<WebsiteComponent*> components;
 
+  private:
+    static CommonJsonMemory* stateJsonMemoryWeakRef;
+    static CommonJsonMemory* visuinoJsonMemoryWeakRef;
   };
+  CommonJsonMemory* WebsiteTab::stateJsonMemoryWeakRef = nullptr;
+  CommonJsonMemory* WebsiteTab::visuinoJsonMemoryWeakRef = nullptr;
 
-  WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst elements) {
 
+  WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst componentsJson) : name(name) {
+    this->components.reserve(componentsJson.size());
+    for (const auto component : componentsJson) {
+      this->appendComponent(component);
+    }
   }
 
   void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory* target) {
-    if (target->isReadyToUse()) {
-      target->lock();
-      auto json = target->get();
-      JsonArray tabArray = json->createNestedArray(this->name);
-      for (auto &component : components) {
-        tabArray.add(component->toWebsiteJson());
-      }
-      target->unlock();
-    } else {
-      Log::error("Tab - Memory locked!", Serial);
+    auto json = target->get();
+    JsonArray tabArray = json->createNestedArray(this->name);
+    for (auto &component : components) {
+      tabArray.add(component->toWebsiteJson());
     }
   }
+
+  WebsiteTab::ComponentParsingStatus WebsiteTab::appendComponent(const JsonObjectConst &object) {
+    if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType))
+      return ComponentParsingStatus::OBJECT_NOT_VALID;
+    const char* componentType = object[JsonKey::ComponentType];
+    if(strlen(componentType) < 1) return ComponentParsingStatus::COMPONENT_TYPE_NOT_FOUND;
+    using namespace ComponentType;
+
+    if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
+      parseInputComponentToWebsite<Switch>(object);
+    } else if (!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
+      parseInputComponentToWebsite<NumberInput>(object);
+    } else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
+      parseInputComponentToWebsite<Slider>(object);
+    } else if (!strncmp(componentType, Input::Button, strlen(componentType))) {
+      parseInputComponentToWebsite<Button>(object);
+    }
+    else if (!strncmp(componentType, Output::Label, strlen(componentType))) {
+      parseOutputComponentToWebsite<Label>(object);
+    } else if (!strncmp(componentType, Output::Gauge, strlen(componentType))) {
+      parseOutputComponentToWebsite<Gauge>(object);
+    } else if (!strncmp(componentType, Output::Indicator, strlen(componentType))) {
+      parseOutputComponentToWebsite<LedIndicator>(object);
+    } else if (!strncmp(componentType, Output::ProgressBar, strlen(componentType))) {
+      parseOutputComponentToWebsite<ProgressBar>(object);
+    } else if (!strncmp(componentType, Output::Field, strlen(componentType))) {
+      parseOutputComponentToWebsite<ColorField>(object);
+    } else if (!strncmp(componentType, Output::Image, strlen(componentType))) {
+      parseOutputComponentToWebsite<BackgroundImage>(object);
+    } else {
+      return ComponentParsingStatus::OBJECT_NOT_VALID;
+    }
+    return ComponentParsingStatus::OK;
+  }
+
+  template<typename ComponentType>
+  bool WebsiteTab::parseInputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
+    if (!componentAlreadyExists(componentName)) {
+      auto component = new ComponentType(object);
+      if (component->isInitializedOK()) {
+        components.push_back(component);
+      } else {
+        delete component;
+        return false;
+      }
+    }
+    return true;
+  }
+
+  template<typename ComponentType>
+  bool WebsiteTab::parseOutputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
+    if(!componentAlreadyExists(componentName)){
+      auto component = new ComponentType(object);
+      if(component->isInitializedOK()) {
+        components.push_back(component);
+      }
+      else {
+        delete component;
+        return false;
+      }
+    } else {
+      auto component = reinterpret_cast<ComponentType*>(getComponentByName(componentName));
+      if (component != nullptr) component->setState(object);
+      else return false;
+    }
+    return true;
+  }
+
+  template<typename ComponentType>
+  bool WebsiteTab::parseInputComponentToVisuino(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
+    auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
+    if (component == nullptr) return false;
+    component->setState(object);
+    if (WebsiteComponent::isMemoryReadyToUse()) {
+      WebsiteComponent::lockJsonMemory();
+      ComponentType::setVisuinoOutput(component->toVisuinoJson());
+      WebsiteComponent::releaseJsonMemory();
+    } else return false;
+    return true;
+  }
+
+  WebsiteComponent* WebsiteTab::getComponentByName(const char* name) {
+    for(auto component : this->components){
+      if(component->getName().equals(name)) return component;
+    }
+    return nullptr;
+  }
+
+  bool WebsiteTab::componentAlreadyExists(const char* componentName) {
+    bool res = false;
+    if (getComponentByName(componentName) != nullptr) res = true;
+    return res;
+  }
+
 
   class Card {
   public:
@@ -944,36 +1061,7 @@ namespace Website {
   CommonJsonMemory* Card::outputJsonMemory;
 
   Card::ComponentStatus Card::add(const JsonObjectConst& object) {
-    if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType)) return ComponentStatus::OBJECT_NOT_VALID;
-    const char* componentType = object[JsonKey::ComponentType];
-    if(strlen(componentType) < 1) return ComponentStatus::COMPONENT_TYPE_NOT_FOUND;
-    using namespace ComponentType;
 
-    if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
-      parseInputComponentToWebsite<Switch>(object);
-    } else if (!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
-      parseInputComponentToWebsite<NumberInput>(object);
-    } else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
-      parseInputComponentToWebsite<Slider>(object);
-    } else if (!strncmp(componentType, Input::Button, strlen(componentType))) {
-      parseInputComponentToWebsite<Button>(object);
-    }
-    else if (!strncmp(componentType, Output::Label, strlen(componentType))) {
-      parseOutputComponentToWebsite<Label>(object);
-    } else if (!strncmp(componentType, Output::Gauge, strlen(componentType))) {
-      parseOutputComponentToWebsite<Gauge>(object);
-    } else if (!strncmp(componentType, Output::Indicator, strlen(componentType))) {
-      parseOutputComponentToWebsite<LedIndicator>(object);
-    } else if (!strncmp(componentType, Output::ProgressBar, strlen(componentType))) {
-      parseOutputComponentToWebsite<ProgressBar>(object);
-    } else if (!strncmp(componentType, Output::Field, strlen(componentType))) {
-      parseOutputComponentToWebsite<ColorField>(object);
-    } else if (!strncmp(componentType, Output::Image, strlen(componentType))) {
-      parseOutputComponentToWebsite<BackgroundImage>(object);
-    } else {
-      return ComponentStatus::OBJECT_NOT_VALID;
-    }
-    return ComponentStatus::OK;
   }
 
   JsonObject Card::onHTTPRequest() {
@@ -1012,7 +1100,6 @@ namespace Website {
     bool res = false;
     if (getComponentByName(componentName) != nullptr) res = true;
     return res;
-
   }
 
   void Card::reserve(size_t size){
@@ -1417,16 +1504,23 @@ String testWebsiteConfigStr = {R"(
     static void parseTabs(const JsonObjectConst& tabsJson);
 
     static inline void garbageCollect() { for (auto& tab : tabs) delete tab; }
-    static inline void setStateJsonRef(CommonJsonMemory* ref) { stateJsonMemoryWeakRef = ref; }
+    static inline CommonJsonMemory* getStateJsonWeakRef() { return &stateJsonMemory; }
+    static inline CommonJsonMemory* getComponentJsonWeakRef() { return &componentJsonMemory; }
+    static inline CommonJsonMemory* getVisuinoOutputJsonWeakRef() { return &visuinoOutputJsonMemory; }
 
     static JsonObject onApplicationStateHttpRequest();
+  
 
   private:
     static std::vector<Website::WebsiteTab*> tabs;
-    static CommonJsonMemory* stateJsonMemoryWeakRef;
+    static CommonJsonMemory stateJsonMemory;
+    static CommonJsonMemory componentJsonMemory;
+    static CommonJsonMemory visuinoOutputJsonMemory;
   };
   std::vector<Website::WebsiteTab*> ApplicationContext::tabs;
-  CommonJsonMemory* ApplicationContext::stateJsonMemoryWeakRef;
+  CommonJsonMemory ApplicationContext::stateJsonMemory;
+  CommonJsonMemory ApplicationContext::componentJsonMemory;
+  CommonJsonMemory ApplicationContext::visuinoOutputJsonMemory;
 
   void ApplicationContext::init() {
 
@@ -1441,16 +1535,17 @@ String testWebsiteConfigStr = {R"(
   }
 
   JsonObject ApplicationContext::onApplicationStateHttpRequest() {
-
-
-    return {};
+    for (auto& tab : tabs) {
+      tab->onApplicationStateHttpRequest(&stateJsonMemory);
+    }
+    return stateJsonMemory.get()->as<JsonObject>();
   }
 
 
   namespace JsonReader {
 
   size_t memorySize = 0;
-  CommonJsonMemory stateJsonMemory;
+
   CommonJsonMemory componentJsonMemory;
 #ifdef ESP32
   CommonJsonMemory visuinoOutputJsonMemory;
@@ -1488,17 +1583,19 @@ String testWebsiteConfigStr = {R"(
 
   // ESP32 needs second JSON document because of multicore architecture and it could not be common with input memory
   bool allocateVisuinoOutputMemory(size_t size) {
+    auto visuinoOutputJsonWeakRef = ApplicationContext::getVisuinoOutputJsonWeakRef();
 #ifdef ESP32
-    if(visuinoOutputJsonMemory.allocate(size)){
-      Website::Card::setJsonMemoryForVisuino(&visuinoOutputJsonMemory);
+    if(visuinoOutputJsonWeakRef->allocate(size)){
       return true;
     } else{
-      visuinoOutputJsonMemory.garbageCollect();
+      visuinoOutputJsonWeakRef->garbageCollect();
       return false;
     }
 #endif
 #ifdef ESP8266
-    Website::Card::setJsonMemoryForVisuino(&stateJsonMemory);
+    // ESP8266 is not multithreaded so visuino output can use component output memory
+    // It saves few bytes. Anyway, this tool is recommended to work with ESP32 to reach better reliability
+    visuinoOutputJsonWeakRef = ApplicationContext::getComponentJsonWeakRef();
     return true;
 #endif
   }
@@ -1510,44 +1607,45 @@ String testWebsiteConfigStr = {R"(
     static bool isInitialized = false;
     static bool isElementsInitialized = false;
     isValid = validateJson(json);
+    auto stateJsonWeakRef = ApplicationContext::getStateJsonWeakRef();
+    if( stateJsonWeakRef == nullptr) Serial.println("error!!!!!!!@!@!!@");
     if (isValid) {
       if (!isInitialized) {
         memorySize = json.length();
         Serial.println((int)memorySize);
-        if (stateJsonMemory.allocate(getBufferSize(memorySize))) {
-          Website::Card::setJsonMemory(&stateJsonMemory);
+        if (stateJsonWeakRef->allocate(memorySize)) {
           isInitialized = true;
         } else {
-          stateJsonMemory.garbageCollect();
+          stateJsonWeakRef->garbageCollect();
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
 
-      if (stateJsonMemory.isReadyToUse()) {
+      if (stateJsonWeakRef->isReadyToUse()) {
 
         // unlock json memory before returning
         auto releaseAndReturn = [&] (InputJsonStatus status) {
-          stateJsonMemory.unlock();
+          stateJsonWeakRef->unlock();
           return status;
         };
 
-        stateJsonMemory.lock();
-        deserializeJson(*stateJsonMemory.get(), json);
-        if (stateJsonMemory.get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
-        JsonObject inputObject = stateJsonMemory.get()->as<JsonObject>();
+        stateJsonWeakRef->lock();
+        deserializeJson(*(stateJsonWeakRef->get()), json);
+        if (stateJsonWeakRef->get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
+        JsonObject inputObject = stateJsonWeakRef->get()->as<JsonObject>();
         if (!isElementsInitialized) {
           size_t biggestObjectSize = getBiggestObjectSize(inputObject);
           if (!allocateVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
-          if (componentJsonMemory.allocate(getBufferSize(biggestObjectSize))) {
-            WebsiteComponent::setJsonMemory(&componentJsonMemory);
+          auto componentJsonWeakRef = ApplicationContext::getComponentJsonWeakRef();
+          if (componentJsonWeakRef->allocate(getBufferSize(biggestObjectSize))) {
             isElementsInitialized = true;
           } else {
-            componentJsonMemory.garbageCollect();
+            componentJsonWeakRef->garbageCollect();
             return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           }
         }
         ApplicationContext::parseTabs(inputObject);
-        stateJsonMemory.unlock();
+        stateJsonWeakRef->unlock();
       }
 
 
@@ -1687,23 +1785,25 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
 #endif
   });
 
-  webServer.on("/input", HTTP_GET, [] (AsyncWebServerRequest* request){
+  webServer.on("/state", HTTP_GET, [] (AsyncWebServerRequest* request){
     using namespace Website;
+    auto stateJsonWeakRef = ApplicationContext::getStateJsonWeakRef();
+
 #ifdef DEBUG_BUILD
     Log::info("Proccessing info request");
 #endif
-    if (Card::isMemoryReadyToUse()) {
+    if (stateJsonWeakRef->isReadyToUse()) {
 #ifdef DEBUG_BUILD
       Log::info("mem ok, request resolved");
 #endif
-      Card::lockJsonMemory();
+      stateJsonWeakRef->lock();
       static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
       responseBody.clear();
-      serializeJson(card.onHTTPRequest()[JsonKey::Body], responseBody);
+      serializeJson(*(stateJsonWeakRef->get()), responseBody);
       AsyncWebServerResponse* response = request->beginResponse(HttpCodes::OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
-      Card::releaseJsonMemory();
+      stateJsonWeakRef->unlock();
     } else {
 #ifdef DEBUG_BUILD
       Log::info("mem locked, no content");
@@ -1712,7 +1812,7 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
     }
   });
 
-  webServer.on("/status", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
+  webServer.on("/input", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
     using namespace Website;
     if (Card::isOutputMemoryReadyToUse()) {
@@ -1759,7 +1859,7 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
 }
 
 #if DEBUG_BUILD && ESP32
-void registerWiFIDebugEvents(void) {
+void registerWiFIDebugEvents() {
   WiFi.onEvent([] (WiFiEvent_t event, WiFiEventInfo_t info) {
     Log::info("AP connected!");
   }, SYSTEM_EVENT_AP_STACONNECTED);
