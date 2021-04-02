@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <SPIFFS.h>
 #include <esp_wifi.h>
+#include <string>
 // Force AsyncTCP to run on one core!
 #define CONFIG_ASYNC_TCP_RUNNING_CORE 0
 #define CONFIG_ASYNC_TCP_USE_WDT 1
@@ -87,6 +88,7 @@ namespace JsonKey {
   const char* Title PROGMEM = "title";
   const char* Body PROGMEM = "body";
   const char* Elements PROGMEM = "elements";
+  const char* Tabs PROGMEM = "tabs";
 
   const char* Name PROGMEM = "name";
   const char* Width PROGMEM = "width";
@@ -123,6 +125,8 @@ namespace ErrorMessage {
     const char* TitleNotFound PROGMEM = "Title not found";
     const char* JsonOverflow PROGMEM = "Json Input - overflow";
     const char* AllocError PROGMEM = "Json Input - Allocation Error";
+    const char* TabsNotFound PROGMEM = "Json Input - Tabs not found";
+    const char* TabsArrayEmpty PROGMEM = "Json Input - Tabs array empty";
     const char* ElementsNotFound PROGMEM = "Json Input - elements not found";
     const char* ElementsArrayEmpty PROGMEM = "Json Input - array of elements is empty";
     const char* ObjectNotValid PROGMEM = "Json Input - Object is not valid";
@@ -864,11 +868,41 @@ namespace Website {
     String filePath;
   };
 
+  class WebsiteTab {
+  public:
+    WebsiteTab(const char* name, const JsonArrayConst elements);
+    ~WebsiteTab() = default;
 
+    void onApplicationStateHttpRequest(CommonJsonMemory* target);
+
+  private:
+    String name;
+    std::vector<WebsiteComponent*> components;
+
+  };
+
+  WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst elements) {
+
+  }
+
+  void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory* target) {
+    if (target->isReadyToUse()) {
+      target->lock();
+      auto json = target->get();
+      JsonArray tabArray = json->createNestedArray(this->name);
+      for (auto &component : components) {
+        tabArray.add(component->toWebsiteJson());
+      }
+      target->unlock();
+    } else {
+      Log::error("Tab - Memory locked!", Serial);
+    }
+  }
 
   class Card {
   public:
     Card() = default;
+    explicit Card(const char* name) : name(name) {}
     ~Card() {this->garbageCollect();}
     enum class ComponentStatus : uint8_t{
       OK,
@@ -881,8 +915,8 @@ namespace Website {
     bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
     void reserve(size_t size);
     void garbageCollect();
-    const String& getTitle() const {return this->title;}
-    void setTitle(const String& nTitle) {this->title = nTitle;}
+    const String& getName() const {return this->name;}
+    void setName(const String& name) {this->name = name;}
 
     static void setJsonMemory(CommonJsonMemory* mem);
     static void setJsonMemoryForVisuino(CommonJsonMemory* mem);
@@ -901,7 +935,7 @@ namespace Website {
     WebsiteComponent* getComponentByName(const char* name);
     bool componentAlreadyExists(const char* componentName);
     std::vector<WebsiteComponent*> components;
-    String title;
+    String name;
     static CommonJsonMemory* jsonMemory;                        // main JSON memory, used for preparing data to /input HTTP request, size is all components size * 2 (common with parsing json)
     static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 points on the same as "jsonMemory"
 };
@@ -1082,129 +1116,116 @@ namespace Website {
 }
 
 String testWebsiteConfigStr = {R"(
-{
-  "elements" : [
-      {
-        "name" : "Lamp2",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 100,
-        "posY" : 100,
-        "color" : "blue",
-        "value": false
-      },
-      {
-        "name" : "Motor",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 400,
-        "posY" : 400,
-        "color" : "#abcdef",
-        "value": false
-      },
-      {
-        "name" : "Nothing",
-        "size" : 25,
-        "componentType" : "switch",
-        "posX" : 170,
-        "posY" : 100,
-        "color" : "lightgreen",
-        "value": false
-      },
-      {
-        "name" : "Something",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 50,
-        "posY" : 150,
-        "color" : "#bbaaaa",
-        "value": true
-      },
-      {
-        "name" : "Servo",
-        "size" : 20,
-        "componentType" : "switch",
-        "dataType" : "boolean",
-        "posX" : 170,
-        "posY" : 150,
-        "color" : "#abcada",
-        "value": true
-      },
-      {
-        "name" : "LightBulb",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 100,
-        "posY" : 150,
-        "color" : "#00ffe5",
-        "value": true
-      },
-      {
-        "name" : "bulb",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 50,
-        "posY" : 100,
-        "color" : "orange",
-        "value": true
-      },
-      {
-        "name" : "bulb2",
-        "size" : 20,
-        "componentType" : "switch",
-        "posX" : 10,
-        "posY" : 100,
-        "color" : "red",
-        "value": false
-      },
-      {
-        "name" : "Info",
-        "componentType" : "label",
-        "posX" : 200,
-        "posY" : 350,
-        "color" : "#ff2233",
-        "value": "Siema wam wszystkim"
-      },
-      {
-        "name" : "Info2",
-        "componentType" : "label",
-        "posX" : 200,
-        "posY" : 4000,
-        "color" : "#ff2233",
-        "value": "Jak tam"
-      },
-      {
-        "name" : "Switch Info",
-        "componentType" : "label",
-        "posX" : 120,
-        "posY" : 200,
-        "color" : "#444",
-        "value": "Switches"
-      },
-      {
-        "name" : "Speed",
-        "componentType" : "gauge",
-        "posX" : 200,
-        "posY" : 300,
-        "color" : "red",
-        "value": 740,
-        "maxValue": 800,
-        "minValue": 0,
-        "width" : 200,
-        "height": 100
-      },
-      {
-        "name" : "Slidee",
-        "componentType" : "slider",
-        "posX" : 300,
-        "posY" : 150,
-        "color" : "blue",
-        "value": 740,
-        "maxValue": 800,
-        "minValue": 0,
-        "width" : 500,
-        "height": 20
-      },
+{  
+  "main": [
+        {
+          "name" : "Lamp2",
+          "size" : 20,
+          "componentType" : "switch",
+          "posX" : 0,
+          "posY" : 0,
+          "color" : "blue",
+          "value": false
+        },
+        {
+          "name" : "Motor",
+          "size" : 20,
+          "componentType" : "switch",
+          "posX" : 400,
+          "posY" : 400,
+          "color" : "#abcdef",
+          "value": false
+        },
+        {
+          "name" : "Nothing",
+          "size" : 30,
+          "componentType" : "switch",
+          "posX" : 170,
+          "posY" : 100,
+          "color" : "lightgreen",
+          "value": false
+        },
+        {
+          "name" : "Something",
+          "size" : 30,
+          "componentType" : "switch",
+          "posX" : 50,
+          "posY" : 150,
+          "color" : "#bbaaaa",
+          "value": true
+        },
+        {
+          "name" : "Servo",
+          "size" : 40,
+          "componentType" : "switch",
+          "dataType" : "boolean",
+          "posX" : 170,
+          "posY" : 150,
+          "color" : "#abcada",
+          "value": true
+        },
+        {
+          "name" : "LightBulb",
+          "size" : 25,
+          "componentType" : "switch",
+          "posX" : 100,
+          "posY" : 150,
+          "color" : "#00ffe5",
+          "value": true
+        },
+        {
+          "name" : "bulb",
+          "size" : 25,
+          "componentType" : "switch",
+          "posX" : 50,
+          "posY" : 100,
+          "color" : "orange",
+          "value": true
+        },
+        {
+          "name" : "Info",
+          "componentType" : "label",
+          "posX" : 100,
+          "posY" : 300,
+          "fontSize": 24,
+          "color" : "red",
+          "isVertical": true,
+          "value": "Pionowy napis"
+        },
+        {
+          "name" : "Info2",
+          "componentType" : "label",
+          "posX" : 100,
+          "posY" : 700,
+          "fontSize": 30,
+          "color" : "lime",
+          "isVertical": false,
+          "value": "Poziomy napis"
+        },
+        {
+          "name" : "Speed",
+          "componentType" : "gauge",
+          "posX" : 200,
+          "posY" : 300,
+          "color" : "red",
+          "value": 480,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 500,
+          "height": 400
+        },
+        {
+          "name" : "Slidee",
+          "componentType" : "slider",
+          "posX" : 300,
+          "posY" : 150,
+          "color" : "blue",
+          "value": 740,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 500,
+          "height": 20
+        },
       {
         "name" : "Sliderrrre",
         "componentType" : "slider",
@@ -1219,143 +1240,95 @@ String testWebsiteConfigStr = {R"(
       },
       {
         "name": "other temperature",
-        "color": "blue",
-        "fontSize": 16,
+        "color": "#333",
+        "fontSize": 15,
         "width": 150,
         "value": 44.2,
-        "desktopScale": 2,
         "componentType": "numberInput",
         "posY": 200,
         "posX": 400
-    },
-    {
-      "name" : "progress-bar",
-      "componentType" : "progressBar",
-      "posX" : 700,
-      "posY" : 350,
-      "color" : "orangered",
-      "value": 700,
-      "maxValue": 800,
-      "minValue": 0,
-      "width" : 250,
-      "height": 20,
-      "isVertical": true
-    },
-    {
-      "name" : "progress-bar2",
-      "componentType" : "progressBar",
-      "posX" : 750,
-      "posY" : 600,
-      "color" : "lime",
-      "value": 700,
-      "maxValue": 800,
-      "minValue": 0,
-      "width" : 250,
-      "height": 20,
-      "isVertical": false
-    },
-    {
-      "name": "btn2",
-      "textColor": "white",
-      "fontSize": 16,
-      "text": "Horizontal",
-      "width": 40,
-      "height": 200,
-      "color": "darkorange",
-      "posX": 1400,
-      "posY": 500,
-      "isVertical": true,
-      "componentType": "button"
-    },
-    {
-      "name": "btn",
-      "textColor": "white",
-      "fontSize": 16,
-      "text": "Vertical",
-      "width": 200,
-      "height": 40,
-      "color": "blue",
-      "posX": 1000,
-      "posY": 700,
-      "componentType": "button"
-    },
-    {
-      "name": "controls",
-      "color": "#bbb",
-      "width": 800,
-      "height" : 400,
-      "componentType": "field",
-      "posY": 0,
-      "posX": 0
-    },
-    {
-      "name": "controls2",
-      "color": "#bbb",
-      "width": 800,
-      "height" : 400,
-      "componentType": "field",
-      "posY": 0,
-      "posX": 800
-    },
-    {
-      "name": "controls3",
-      "color": "#ddd",
-      "width": 800,
-      "height" : 400,
-      "componentType": "field",
-      "posY": 400,
-      "posX": 0
-    },
-    {
-      "name": "controls4",
-      "color": "#ddd",
-      "width": 800,
-      "height" : 400,
-      "componentType": "field",
-      "posY": 400,
-      "posX": 800
-    },
-    {
-      "name": "btna",
-      "textColor": "white",
-      "fontSize": 16,
-      "text": "Vertical",
-      "width": 200,
-      "height": 40,
-      "color": "blue",
-      "posX": 50,
-      "posY": 700,
-      "componentType": "button"
-    },
-    {
-      "name": "btnb",
-      "textColor": "white",
-      "fontSize": 16,
-      "text": "Vertical",
-      "width": 200,
-      "height": 40,
-      "color": "blue",
-      "posX": 300,
-      "posY": 700,
-      "componentType": "button"
-    },
-      {
-        "name" : "buttonInfo",
-        "componentType" : "label",
-        "posX" : 50,
-        "posY" : 670,
-        "color" : "blue",
-        "value": "Button",
-        "fontSize" : "25"
       },
       {
-        "name" : "buttonInfo2",
-        "componentType" : "label",
-        "posX" : 300,
-        "posY" : 670,
-        "color" : "blue",
-        "value": "Button2",
-        "fontSize" : "25"
+        "name": "btn1",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Vertical",
+        "width": 40,
+        "height": 200,
+        "color": "#555",
+        "posX": 1400,
+        "posY": 400,
+        "isVertical": true,
+        "componentType": "button"
+      },
+      {
+        "name": "btn2",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Horizontal",
+        "width": 200,
+        "height": 40,
+        "color": "#333",
+        "posX": 1400,
+        "posY": 700,
+        "isVertical": false,
+        "componentType": "button"
+      },
+      {
+        "name": "led",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 900,
+        "color": "red",
+        "size": 50
+      },
+      {
+        "name": "led2",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 950,
+        "color": "yellow",
+        "size": 50
+      },
+      {
+        "name": "led3",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 1000,
+        "color": "lime",
+        "size": 50
+      },
+      {
+        "name": "led4",
+        "componentType": "indicator",
+        "posY": 100,
+        "posX": 1050,
+        "value": true,
+        "size": 50,
+        "color": "yellow"
+      },
+      {
+        "name": "controls3",
+        "color": "orangered",
+        "width": 800,
+        "height" : 400,
+        "componentType": "field",
+        "posY": 400,
+        "posX": 800,
+        "outlineColor": "black"
+      },
+      {
+        "name": "controls4",
+        "color": "#333",
+        "width": 800,
+        "height" : 400,
+        "componentType": "field",
+        "posY": 400,
+        "posX": 0,
+        "outlineColor": "black"
       },
       {
         "name": "image1",
@@ -1366,15 +1339,118 @@ String testWebsiteConfigStr = {R"(
         "posX": 0,
         "fileName": "test.jpg"
       }
-  ]
+    ],
+    "settings": [
+        {
+          "name" : "progress-bar",
+          "componentType" : "progressBar",
+          "posX" : 700,
+          "posY" : 350,
+          "color" : "#cc0000",
+          "value":  600,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 400,
+          "height": 20,
+          "isVertical": true
+        },
+        {
+          "name": "settings-controls",
+          "color": "#999",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 0,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-controls2",
+          "color": "darkorange",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 800,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-controls3",
+          "color": "orangered",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 400,
+          "posX": 800,
+          "outlineColor": "black"
+        }, 
+        {
+          "name": "settings-image1",
+          "width": 0,
+          "height" : 0,
+          "componentType": "image",
+          "posY": 100,
+          "posX": 300,
+          "fileName": "test.jpg"
+        },
+        
+      {
+        "name": "settings-btn1",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Vertical",
+        "width": 40,
+        "height": 200,
+        "color": "#85a",
+        "posX": 1400,
+        "posY": 400,
+        "isVertical": true,
+        "componentType": "button"
+      }
+      ]
 })"};
 
+  Website::Card card;
+  class ApplicationContext {
+  public:
+    static void init();
+    static void parseTabs(const JsonObjectConst& tabsJson);
 
-Website::Card card;
+    static inline void garbageCollect() { for (auto& tab : tabs) delete tab; }
+    static inline void setStateJsonRef(CommonJsonMemory* ref) { stateJsonMemoryWeakRef = ref; }
 
-namespace JsonReader {
+    static JsonObject onApplicationStateHttpRequest();
+
+  private:
+    static std::vector<Website::WebsiteTab*> tabs;
+    static CommonJsonMemory* stateJsonMemoryWeakRef;
+  };
+  std::vector<Website::WebsiteTab*> ApplicationContext::tabs;
+  CommonJsonMemory* ApplicationContext::stateJsonMemoryWeakRef;
+
+  void ApplicationContext::init() {
+
+  }
+
+  void ApplicationContext::parseTabs(const JsonObjectConst& tabsJson) {
+    tabs.reserve(tabsJson.size());
+    for (JsonPairConst tabJson : tabsJson) {
+      tabs.push_back(new Website::WebsiteTab(tabJson.key().c_str(),
+                                             tabJson.value().as<JsonArrayConst>()));
+    }
+  }
+
+  JsonObject ApplicationContext::onApplicationStateHttpRequest() {
+
+
+    return {};
+  }
+
+
+  namespace JsonReader {
+
   size_t memorySize = 0;
-  CommonJsonMemory inputJsonMemory;
+  CommonJsonMemory stateJsonMemory;
   CommonJsonMemory componentJsonMemory;
 #ifdef ESP32
   CommonJsonMemory visuinoOutputJsonMemory;
@@ -1386,8 +1462,8 @@ namespace JsonReader {
     INVALID_INPUT,
     ALLOC_ERROR,
     TITLE_NOT_FOUND,
-    ELEMENTS_NOT_FOUND,
-    ELEMENTS_ARRAY_EMPTY,
+    TABS_NOT_FOUND,
+    TABS_ARRAY_EMPTY,
     OBJECT_NOT_VALID,
     NAME_NOT_FOUND,
     COMPONENT_TYPE_NOT_FOUND,
@@ -1397,21 +1473,21 @@ namespace JsonReader {
     return !(json.isEmpty() || json.indexOf(JsonKey::Name) < 0);
   }
 
-  size_t getBiggestObjectSize(const JsonArrayConst& arr){
+  size_t getBiggestObjectSize(const JsonObjectConst& arr){
     size_t biggest = 0;
-    for (const auto& item : arr) {
-      if(item.memoryUsage() > biggest) biggest = item.memoryUsage();
+    for (const JsonPairConst item: arr) {
+      if(item.value().memoryUsage() > biggest) biggest = item.value().memoryUsage();
     }
     return biggest;
   }
   
-  size_t getBufferSize(size_t memoryUsage){
+  size_t getBufferSize(size_t memoryUsage) {
     size_t newSize = memoryUsage * 2;
     return newSize;
   }
 
   // ESP32 needs second JSON document because of multicore architecture and it could not be common with input memory
-  bool setVisuinoOutputMemory(size_t size){
+  bool allocateVisuinoOutputMemory(size_t size) {
 #ifdef ESP32
     if(visuinoOutputJsonMemory.allocate(size)){
       Website::Card::setJsonMemoryForVisuino(&visuinoOutputJsonMemory);
@@ -1422,11 +1498,12 @@ namespace JsonReader {
     }
 #endif
 #ifdef ESP8266
-    Website::Card::setJsonMemoryForVisuino(&inputJsonMemory);
+    Website::Card::setJsonMemoryForVisuino(&stateJsonMemory);
     return true;
 #endif
   }
 
+  // TODO change its to something like - allocateJsonBuffers
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
     using namespace Website;
     static bool isValid = false;
@@ -1437,36 +1514,31 @@ namespace JsonReader {
       if (!isInitialized) {
         memorySize = json.length();
         Serial.println((int)memorySize);
-        if (inputJsonMemory.allocate(getBufferSize(memorySize))) {
-          Website::Card::setJsonMemory(&inputJsonMemory);
+        if (stateJsonMemory.allocate(getBufferSize(memorySize))) {
+          Website::Card::setJsonMemory(&stateJsonMemory);
           isInitialized = true;
         } else {
-          inputJsonMemory.garbageCollect();
+          stateJsonMemory.garbageCollect();
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
 
-      if(inputJsonMemory.isReadyToUse()){
+      if (stateJsonMemory.isReadyToUse()) {
 
         // unlock json memory before returning
         auto releaseAndReturn = [&] (InputJsonStatus status) {
-          inputJsonMemory.unlock();
+          stateJsonMemory.unlock();
           return status;
         };
 
-        inputJsonMemory.lock();
-        deserializeJson(*inputJsonMemory.get(), json);
-        if (inputJsonMemory.get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
-
-        JsonObject inputObject = inputJsonMemory.get()->as<JsonObject>();
-        if (!inputObject.containsKey(JsonKey::Elements)) return releaseAndReturn(InputJsonStatus::ELEMENTS_NOT_FOUND);
-        JsonArray elements = inputObject[JsonKey::Elements].as<JsonArray>();
-        if (elements.size() == 0) return releaseAndReturn(InputJsonStatus::ELEMENTS_ARRAY_EMPTY);
-        if(!isElementsInitialized) {
-          size_t biggestObjectSize = getBiggestObjectSize(elements);
-
-          if(!setVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
-          if(componentJsonMemory.allocate(getBufferSize(biggestObjectSize))){
+        stateJsonMemory.lock();
+        deserializeJson(*stateJsonMemory.get(), json);
+        if (stateJsonMemory.get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
+        JsonObject inputObject = stateJsonMemory.get()->as<JsonObject>();
+        if (!isElementsInitialized) {
+          size_t biggestObjectSize = getBiggestObjectSize(inputObject);
+          if (!allocateVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
+          if (componentJsonMemory.allocate(getBufferSize(biggestObjectSize))) {
             WebsiteComponent::setJsonMemory(&componentJsonMemory);
             isElementsInitialized = true;
           } else {
@@ -1474,19 +1546,10 @@ namespace JsonReader {
             return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           }
         }
-
-        card.reserve(elements.size());
-        for (JsonObject element : elements) {
-          auto res = card.add(element);
-          if(res == Card::ComponentStatus::COMPONENT_TYPE_NOT_FOUND){
-            return releaseAndReturn(InputJsonStatus::COMPONENT_TYPE_NOT_FOUND);
-          }
-          else if (res != Card::ComponentStatus::OK) {
-            return releaseAndReturn(InputJsonStatus::OBJECT_NOT_VALID);
-          }
-        }
-        inputJsonMemory.unlock();
+        ApplicationContext::parseTabs(inputObject);
+        stateJsonMemory.unlock();
       }
+
 
 
     }
@@ -1501,7 +1564,7 @@ namespace JsonReader {
       case InputJsonStatus::TITLE_NOT_FOUND:
         statusStr = TitleNotFound;
         break;
-      case InputJsonStatus::ELEMENTS_NOT_FOUND:
+      case InputJsonStatus::TABS_NOT_FOUND:
         statusStr = ElementsNotFound;
         break;
       case InputJsonStatus::OBJECT_NOT_VALID:
@@ -1516,7 +1579,7 @@ namespace JsonReader {
       case InputJsonStatus::JSON_OVERFLOW:
         statusStr = JsonOverflow;
         break;
-      case InputJsonStatus::ELEMENTS_ARRAY_EMPTY:
+      case InputJsonStatus::TABS_ARRAY_EMPTY:
         statusStr = ElementsArrayEmpty;
         break;
       case InputJsonStatus::INVALID_INPUT:
@@ -1730,7 +1793,7 @@ void ServerInit(){
 }
 
 void setup(){
-  Serial.begin(9600);
+  Serial.begin(115200);
   if(!SPIFFS.begin()){
     Serial.println("An Error has occurred while mounting SPIFFS");
   }
