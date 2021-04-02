@@ -217,71 +217,54 @@ namespace Website {
 
   class WebsiteComponent {
   public:
-    explicit WebsiteComponent(const JsonObjectConst& inputObject);
+    explicit WebsiteComponent(const JsonObjectConst &inputObject);
+
     virtual ~WebsiteComponent() = default;
 
-      // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
-      // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
-      // ** REMEMBER TO CHECK THAT MEMORY IS NOT LOCKED ADN WRAP THIS METHOD IN lock() and release() functions to make it thread safe (ESP32)
+    // ** THIS METHOD USES COMMON MEMORY(DOCUMENT) FOR STORING JSON TO AVOID MULTIPLE HEAP ALLOCATIONS **
+    // ** WHEN YOU GET OBJECT, THE PREVIOUS ONE IS DELETED AUTOMATICALLY **
+    // ** REMEMBER TO CHECK THAT MEMORY IS NOT LOCKED ADN WRAP THIS METHOD IN lock() and release() functions to make it thread safe (ESP32)
     virtual JsonObject toWebsiteJson() = 0;
-    virtual void setState(const JsonObjectConst& object) = 0;
-    bool isInitializedOK() const {return initializedOK;}
-    const String& getName() const  {return name;}
 
-    static void setJsonMemory (CommonJsonMemory* mem);
-    static void lockJsonMemory();
-    static void releaseJsonMemory();
-    static bool isMemoryReadyToUse();
+    virtual void setState(const JsonObjectConst &object) = 0;
+
+    bool isInitializedOK() const { return initializedOK; }
+
+    const String &getName() const { return name; }
+
+    static void setComponentJsonWeakRef(CommonJsonMemory *ref) { componentJsonWeakRef = ref; }
+    static CommonJsonMemory *getComponentJsonWeakRef() { return componentJsonWeakRef; };
   protected:
-    static CommonJsonMemory* jsonMemory;
+    static CommonJsonMemory *componentJsonWeakRef;  // weak reference to json document stored in ApplicationContext class
     bool initializedOK;
     uint16_t posX;
     uint16_t posY;
     String name;
   };
-  CommonJsonMemory* WebsiteComponent::jsonMemory = nullptr;
 
-  WebsiteComponent::WebsiteComponent(const JsonObjectConst& inputObject){
+  CommonJsonMemory *WebsiteComponent::componentJsonWeakRef = nullptr;
+
+  WebsiteComponent::WebsiteComponent(const JsonObjectConst &inputObject) {
     initializedOK = true;
-    if(inputObject.containsKey(JsonKey::Name)) {
-      this->name = inputObject[JsonKey::Name].as<const char*>();
+    if (inputObject.containsKey(JsonKey::Name)) {
+      this->name = inputObject[JsonKey::Name].as<const char *>();
     } else {
       Log::error("Name not found");
       initializedOK = false;
     }
-    if(inputObject.containsKey(JsonKey::PosX)) {
+    if (inputObject.containsKey(JsonKey::PosX)) {
       this->posX = inputObject[JsonKey::PosX];
     } else {
       Log::error("PosX not found");
       initializedOK = false;
     }
-    if(inputObject.containsKey(JsonKey::PosY)) {
+    if (inputObject.containsKey(JsonKey::PosY)) {
       this->posY = inputObject[JsonKey::PosY];
     } else {
       Log::error("PosY not found");
       initializedOK = false;
     }
 
-  }
-
-
-  void WebsiteComponent::setJsonMemory (CommonJsonMemory* mem) {
-    if ( mem != nullptr ) {
-      jsonMemory = mem;
-    }
-  }
-
-  void WebsiteComponent::lockJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->lock();
-  }
-
-  void WebsiteComponent::releaseJsonMemory() {
-    if(jsonMemory != nullptr) jsonMemory->unlock();
-  }
-
-  bool WebsiteComponent::isMemoryReadyToUse() {
-    if(jsonMemory != nullptr) return jsonMemory->isReadyToUse();
-    else return false;
   }
 
   // ----------------------------------------------------------------------------
@@ -291,44 +274,44 @@ namespace Website {
 
   class InputComponent : public WebsiteComponent {
   public:
-    explicit InputComponent(const JsonObjectConst& inputObject)
-      : WebsiteComponent(inputObject) {
+    explicit InputComponent(const JsonObjectConst &inputObject)
+        : WebsiteComponent(inputObject) {
     }
+
     virtual JsonObject toVisuinoJson() = 0; //using common memory
   private:
   };
 
   class OutputComponent : public WebsiteComponent {
   public:
-    explicit OutputComponent(const JsonObjectConst& inputObject)
-      : WebsiteComponent(inputObject){}
+    explicit OutputComponent(const JsonObjectConst &inputObject)
+        : WebsiteComponent(inputObject) {}
   };
-
 
 
   class Switch : public InputComponent {
   public:
-    explicit Switch(const JsonObjectConst& inputObject)
-            : InputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Value)){
+    explicit Switch(const JsonObjectConst &inputObject)
+        : InputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else {
         this->value = DefaultValues::BooleanValue;
       }
-      if(inputObject.containsKey(JsonKey::Size)){
+      if (inputObject.containsKey(JsonKey::Size)) {
         this->size = inputObject[JsonKey::Size];
       } else this->size = 10;
     }
 
     JsonObject toVisuinoJson() override {
-      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject outputObj = componentJsonWeakRef->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -338,18 +321,20 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
     }
 
-    static void setVisuinoOutput(const JsonObjectConst& obj) {
+    static void setVisuinoOutput(const JsonObjectConst &obj) {
       str.clear();
       serializeJson(obj, str);
       isDataReady = true;
     }
-    static const String& getVisuinoOutput() {return str;}
+
+    static const String &getVisuinoOutput() { return str; }
+
     static bool isDataReady;
   private:
     static String str;
@@ -362,37 +347,37 @@ namespace Website {
 
   class Slider : public InputComponent {
   public:
-    explicit Slider(const JsonObjectConst& inputObject)
-      : InputComponent(inputObject) {
-      if(inputObject.containsKey(JsonKey::Width)){
+    explicit Slider(const JsonObjectConst &inputObject)
+        : InputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if (inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::SliderHeight;
-      if(inputObject.containsKey(JsonKey::MinValue)){
+      if (inputObject.containsKey(JsonKey::MinValue)) {
         this->minValue = inputObject[JsonKey::MinValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::MaxValue)){
+      if (inputObject.containsKey(JsonKey::MaxValue)) {
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Value)){
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
     }
 
     JsonObject toVisuinoJson() override {
-      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject outputObj = componentJsonWeakRef->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -406,18 +391,20 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
     }
 
-    static void setVisuinoOutput(const JsonObjectConst& obj) {
+    static void setVisuinoOutput(const JsonObjectConst &obj) {
       str.clear();
       serializeJson(obj, str);
       isDataReady = true;
     }
-    static const String& getVisuinoOutput() {return str;}
+
+    static const String &getVisuinoOutput() { return str; }
+
     static bool isDataReady;
   private:
     static String str;
@@ -428,30 +415,31 @@ namespace Website {
     uint32_t minValue;
     uint32_t maxValue;
   };
+
   String Slider::str;
   bool Slider::isDataReady;
 
 
   class NumberInput : public InputComponent {
   public:
-    explicit NumberInput(const JsonObjectConst& inputObject)
-      : InputComponent(inputObject) {
-      if (inputObject.containsKey(JsonKey::Value)){
+    explicit NumberInput(const JsonObjectConst &inputObject)
+        : InputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0.0f;
-      if(inputObject.containsKey(JsonKey::FontSize)){
+      if (inputObject.containsKey(JsonKey::FontSize)) {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else this->fontSize = DefaultValues::FontSize;
-      if(inputObject.containsKey(JsonKey::Width)){
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
     }
 
     JsonObject toVisuinoJson() override {
-      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject outputObj = componentJsonWeakRef->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
@@ -459,7 +447,7 @@ namespace Website {
 
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -470,18 +458,20 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
     }
 
-    static void setVisuinoOutput(const JsonObjectConst& obj) {
+    static void setVisuinoOutput(const JsonObjectConst &obj) {
       str.clear();
       serializeJson(obj, str);
       isDataReady = true;
     }
-    static const String& getVisuinoOutput() {return str;}
+
+    static const String &getVisuinoOutput() { return str; }
+
     static bool isDataReady;
 
   private:
@@ -498,41 +488,41 @@ namespace Website {
 
   class Button : public InputComponent {
   public:
-    explicit Button(const JsonObjectConst& inputObject)
-      : InputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Width)){
+    explicit Button(const JsonObjectConst &inputObject)
+        : InputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if (inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::FontSize)){
+      if (inputObject.containsKey(JsonKey::FontSize)) {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else this->fontSize = DefaultValues::FontSize;
-      if(inputObject.containsKey(JsonKey::Text)){
-        this->text = inputObject[JsonKey::Text].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Text)) {
+        this->text = inputObject[JsonKey::Text].as<const char *>();
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
-      if(inputObject.containsKey(JsonKey::TextColor)){
-        this->textColor = inputObject[JsonKey::TextColor].as<const char*>();
+      if (inputObject.containsKey(JsonKey::TextColor)) {
+        this->textColor = inputObject[JsonKey::TextColor].as<const char *>();
       } else this->textColor = DefaultValues::TextColor;
-      if(inputObject.containsKey(JsonKey::IsVertical)){
+      if (inputObject.containsKey(JsonKey::IsVertical)) {
         this->isVertical = inputObject[JsonKey::IsVertical];
       } else this->isVertical = DefaultValues::IsVertical;
       this->value = false;
     }
 
     JsonObject toVisuinoJson() override {
-      JsonObject outputObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject outputObj = componentJsonWeakRef->get()->to<JsonObject>();
       outputObj[JsonKey::Name] = this->name;
       outputObj[JsonKey::Value] = this->value;
       return outputObj;
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -546,18 +536,20 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::Button;
       return websiteObj;
     }
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::Value))
+
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value))
         this->value = object[JsonKey::Value];
     }
 
-    static void setVisuinoOutput(const JsonObjectConst& obj) {
+    static void setVisuinoOutput(const JsonObjectConst &obj) {
       str.clear();
       serializeJson(obj, str);
       isDataReady = true;
     }
 
-    static const String& getVisuinoOutput() {return str;}
+    static const String &getVisuinoOutput() { return str; }
+
     static bool isDataReady;
 
 
@@ -572,27 +564,28 @@ namespace Website {
     String textColor;
     bool isVertical;
   };
+
   String Button::str;
   bool Button::isDataReady;
 
 
   class Label : public OutputComponent {
   public:
-    explicit Label(const JsonObjectConst& inputObject)
-    : OutputComponent(inputObject) {
-      if(inputObject.containsKey(JsonKey::FontSize)){
+    explicit Label(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::FontSize)) {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else fontSize = DefaultValues::FontSize;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
-      if(inputObject.containsKey(JsonKey::Value)){
-        this->value = inputObject[JsonKey::Value].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Value)) {
+        this->value = inputObject[JsonKey::Value].as<const char *>();
       } else this->value = "";
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -603,15 +596,15 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::FontSize)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::FontSize)) {
         this->fontSize = object[JsonKey::FontSize];
       }
-      if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<const char*>();
+      if (object.containsKey(JsonKey::Color)) {
+        this->color = object[JsonKey::Color].as<const char *>();
       }
-      if(object.containsKey(JsonKey::Value)){
-        this->value = object[JsonKey::Value].as<const char*>();
+      if (object.containsKey(JsonKey::Value)) {
+        this->value = object[JsonKey::Value].as<const char *>();
       }
     }
 
@@ -622,39 +615,38 @@ namespace Website {
   };
 
 
-
-  class Gauge : public OutputComponent{
+  class Gauge : public OutputComponent {
   public:
-    explicit Gauge(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::MaxValue)){
+    explicit Gauge(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::MaxValue)) {
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else {
         this->maxValue = 0;
         initializedOK = false;
       }
-      if(inputObject.containsKey(JsonKey::MinValue)){
+      if (inputObject.containsKey(JsonKey::MinValue)) {
         this->minValue = inputObject[JsonKey::MinValue];
       } else {
         this->maxValue = 0;
         initializedOK = false;
       }
-      if(inputObject.containsKey(JsonKey::Value)){
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
-      if(inputObject.containsKey(JsonKey::Width)){
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if (inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::Height;
     }
 
-    JsonObject toWebsiteJson() override{
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+    JsonObject toWebsiteJson() override {
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -668,12 +660,12 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override{
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       } else this->value = 0;
-      if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<const char*>();
+      if (object.containsKey(JsonKey::Color)) {
+        this->color = object[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
     }
 
@@ -688,21 +680,21 @@ namespace Website {
 
   class LedIndicator : public OutputComponent {
   public:
-    explicit LedIndicator(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Value)){
+    explicit LedIndicator(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = DefaultValues::BooleanValue;
-      if(inputObject.containsKey(JsonKey::Size)){
+      if (inputObject.containsKey(JsonKey::Size)) {
         this->size = inputObject[JsonKey::Size];
       } else this->size = 10;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::LedColor;
     }
 
-    JsonObject toWebsiteJson() override{
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+    JsonObject toWebsiteJson() override {
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -713,12 +705,12 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override{
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
-      if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<const char*>();
+      if (object.containsKey(JsonKey::Color)) {
+        this->color = object[JsonKey::Color].as<const char *>();
       }
     }
 
@@ -729,36 +721,36 @@ namespace Website {
   };
 
 
-  class ProgressBar : public OutputComponent{
+  class ProgressBar : public OutputComponent {
   public:
-    explicit ProgressBar(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject) {
-      if(inputObject.containsKey(JsonKey::MinValue)) {
+    explicit ProgressBar(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::MinValue)) {
         this->minValue = inputObject[JsonKey::MinValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::MaxValue)) {
+      if (inputObject.containsKey(JsonKey::MaxValue)) {
         this->maxValue = inputObject[JsonKey::MaxValue];
       } else initializedOK = false;
-      if(inputObject.containsKey(JsonKey::Value)) {
+      if (inputObject.containsKey(JsonKey::Value)) {
         this->value = inputObject[JsonKey::Value];
       } else this->value = 0;
-      if(inputObject.containsKey(JsonKey::Color)) {
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color2;
-      if(inputObject.containsKey(JsonKey::Width)) {
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)) {
+      if (inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::BarHeight;
-      if(inputObject.containsKey(JsonKey::IsVertical)) {
+      if (inputObject.containsKey(JsonKey::IsVertical)) {
         this->isVertical = inputObject[JsonKey::IsVertical];
       } else this->isVertical = DefaultValues::IsVertical;
     }
 
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -773,15 +765,16 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override{
-      if(object.containsKey(JsonKey::Value)){
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
-      if(object.containsKey(JsonKey::Color)){
+      if (object.containsKey(JsonKey::Color)) {
         this->color.clear();
-        this->color = object[JsonKey::Color].as<const char*>();
+        this->color = object[JsonKey::Color].as<const char *>();
       }
     }
+
   private:
     String color;
     uint16_t maxValue;
@@ -792,26 +785,26 @@ namespace Website {
     bool isVertical;
   };
 
-  class ColorField : public OutputComponent{
+  class ColorField : public OutputComponent {
   public:
-    explicit ColorField(const JsonObjectConst& inputObject)
-      : OutputComponent(inputObject){
-      if(inputObject.containsKey(JsonKey::Width)){
+    explicit ColorField(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
+      if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
       } else this->width = DefaultValues::Width;
-      if(inputObject.containsKey(JsonKey::Height)){
+      if (inputObject.containsKey(JsonKey::Height)) {
         this->height = inputObject[JsonKey::Height];
       } else this->height = DefaultValues::Height;
-      if(inputObject.containsKey(JsonKey::Color)){
-        this->color = inputObject[JsonKey::Color].as<const char*>();
+      if (inputObject.containsKey(JsonKey::Color)) {
+        this->color = inputObject[JsonKey::Color].as<const char *>();
       } else this->color = DefaultValues::Color;
-      if(inputObject.containsKey(JsonKey::FieldOutlineColor)){
-        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<const char*>();
+      if (inputObject.containsKey(JsonKey::FieldOutlineColor)) {
+        this->outlineColor = inputObject[JsonKey::FieldOutlineColor].as<const char *>();
       } else this->outlineColor = DefaultValues::FieldOutlineColor;
     }
 
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -822,11 +815,13 @@ namespace Website {
       websiteObj[JsonKey::ComponentType] = ComponentType::Output::Field;
       return websiteObj;
     }
-    void setState(const JsonObjectConst& object) override {
-      if(object.containsKey(JsonKey::Color)){
-        this->color = object[JsonKey::Color].as<const char*>();
+
+    void setState(const JsonObjectConst &object) override {
+      if (object.containsKey(JsonKey::Color)) {
+        this->color = object[JsonKey::Color].as<const char *>();
       }
     }
+
   private:
     uint16_t width;
     uint16_t height;
@@ -836,10 +831,10 @@ namespace Website {
 
   class BackgroundImage : public OutputComponent {
   public:
-    explicit BackgroundImage(const JsonObjectConst& inputObject)
-            : OutputComponent(inputObject){
+    explicit BackgroundImage(const JsonObjectConst &inputObject)
+        : OutputComponent(inputObject) {
       if (inputObject.containsKey(JsonKey::FileName)) {
-        this->filePath = inputObject[JsonKey::FileName].as<const char*>();
+        this->filePath = inputObject[JsonKey::FileName].as<const char *>();
       } else initializedOK = false;
       if (inputObject.containsKey(JsonKey::Width)) {
         this->width = inputObject[JsonKey::Width];
@@ -849,8 +844,9 @@ namespace Website {
       } else this->height = 0;
 
     }
+
     JsonObject toWebsiteJson() override {
-      JsonObject websiteObj = jsonMemory->get()->to<JsonObject>();
+      JsonObject websiteObj = componentJsonWeakRef->get()->to<JsonObject>();
       websiteObj[JsonKey::Name] = this->name;
       websiteObj[JsonKey::PosX] = this->posX;
       websiteObj[JsonKey::PosY] = this->posY;
@@ -861,7 +857,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst& object) override {}   // image doesn't have state
+    void setState(const JsonObjectConst &object) override {}   // image doesn't have state
   private:
     uint16_t width;
     uint16_t height;
@@ -876,42 +872,38 @@ namespace Website {
       COMPONENT_TYPE_NOT_FOUND,
     };
   public:
-    WebsiteTab(const char* name, const JsonArrayConst componentsJson);
+    WebsiteTab(const char *name, const JsonArrayConst componentsJson);
     ~WebsiteTab() { this->garbageCollect(); }
-    ComponentParsingStatus appendComponent(const JsonObjectConst& object);
-    void onApplicationStateHttpRequest(CommonJsonMemory* target);
 
-  public:
-    static inline void setStateJsonRef(CommonJsonMemory* ref) {stateJsonMemoryWeakRef = ref;}
-    static inline void setVisuinoJsonRef(CommonJsonMemory* ref) {visuinoJsonMemoryWeakRef = ref;}
+    ComponentParsingStatus appendComponent(const JsonObjectConst &object);
+    void onApplicationStateHttpRequest(CommonJsonMemory *target);
+    bool onComponentInputHttpRequest(CommonJsonMemory *target, const uint8_t *data, size_t len);
 
   private:
-    template <typename ComponentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
-    template <typename ComponentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
-    template <typename ComponentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
-    WebsiteComponent* getComponentByName(const char* name);
-    bool componentAlreadyExists(const char* componentName);
-    inline void garbageCollect() { for (auto& component : components) delete component; }
+    template<typename ComponentType>
+    bool parseInputComponentToWebsite(const JsonObjectConst &object);
+    template<typename ComponentType>
+    bool parseOutputComponentToWebsite(const JsonObjectConst &object);
+    template<typename ComponentType>
+    bool parseInputComponentToVisuino(const JsonObjectConst &object);
+    WebsiteComponent *getComponentByName(const char *name);
+    bool componentAlreadyExists(const char *componentName);
+
+    inline void garbageCollect() { for (auto &component : components) delete component; }
+
   private:
     String name;
-    std::vector<WebsiteComponent*> components;
-
-  private:
-    static CommonJsonMemory* stateJsonMemoryWeakRef;
-    static CommonJsonMemory* visuinoJsonMemoryWeakRef;
+    std::vector<WebsiteComponent *> components;
   };
-  CommonJsonMemory* WebsiteTab::stateJsonMemoryWeakRef = nullptr;
-  CommonJsonMemory* WebsiteTab::visuinoJsonMemoryWeakRef = nullptr;
 
-
-  WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst componentsJson) : name(name) {
+  WebsiteTab::WebsiteTab(const char *name, const JsonArrayConst componentsJson) : name(name) {
     this->components.reserve(componentsJson.size());
     for (const auto component : componentsJson) {
       this->appendComponent(component);
     }
   }
 
-  void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory* target) {
+  void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory *target) {
     auto json = target->get();
     JsonArray tabArray = json->createNestedArray(this->name);
     for (auto &component : components) {
@@ -920,10 +912,10 @@ namespace Website {
   }
 
   WebsiteTab::ComponentParsingStatus WebsiteTab::appendComponent(const JsonObjectConst &object) {
-    if(!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType))
+    if (!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType))
       return ComponentParsingStatus::OBJECT_NOT_VALID;
-    const char* componentType = object[JsonKey::ComponentType];
-    if(strlen(componentType) < 1) return ComponentParsingStatus::COMPONENT_TYPE_NOT_FOUND;
+    const char *componentType = object[JsonKey::ComponentType];
+    if (strlen(componentType) < 1) return ComponentParsingStatus::COMPONENT_TYPE_NOT_FOUND;
     using namespace ComponentType;
 
     if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
@@ -934,8 +926,7 @@ namespace Website {
       parseInputComponentToWebsite<Slider>(object);
     } else if (!strncmp(componentType, Input::Button, strlen(componentType))) {
       parseInputComponentToWebsite<Button>(object);
-    }
-    else if (!strncmp(componentType, Output::Label, strlen(componentType))) {
+    } else if (!strncmp(componentType, Output::Label, strlen(componentType))) {
       parseOutputComponentToWebsite<Label>(object);
     } else if (!strncmp(componentType, Output::Gauge, strlen(componentType))) {
       parseOutputComponentToWebsite<Gauge>(object);
@@ -954,8 +945,8 @@ namespace Website {
   }
 
   template<typename ComponentType>
-  bool WebsiteTab::parseInputComponentToWebsite(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
+  bool WebsiteTab::parseInputComponentToWebsite(const JsonObjectConst &object) {
+    const char *componentName = object[JsonKey::Name];
     if (!componentAlreadyExists(componentName)) {
       auto component = new ComponentType(object);
       if (component->isInitializedOK()) {
@@ -969,19 +960,18 @@ namespace Website {
   }
 
   template<typename ComponentType>
-  bool WebsiteTab::parseOutputComponentToWebsite(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
-    if(!componentAlreadyExists(componentName)){
+  bool WebsiteTab::parseOutputComponentToWebsite(const JsonObjectConst &object) {
+    const char *componentName = object[JsonKey::Name];
+    if (!componentAlreadyExists(componentName)) {
       auto component = new ComponentType(object);
-      if(component->isInitializedOK()) {
+      if (component->isInitializedOK()) {
         components.push_back(component);
-      }
-      else {
+      } else {
         delete component;
         return false;
       }
     } else {
-      auto component = reinterpret_cast<ComponentType*>(getComponentByName(componentName));
+      auto component = reinterpret_cast<ComponentType *>(getComponentByName(componentName));
       if (component != nullptr) component->setState(object);
       else return false;
     }
@@ -990,102 +980,40 @@ namespace Website {
 
   template<typename ComponentType>
   bool WebsiteTab::parseInputComponentToVisuino(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
-    auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
+    const char *componentName = object[JsonKey::Name];
+    auto component = reinterpret_cast<InputComponent *>(getComponentByName(componentName));
     if (component == nullptr) return false;
     component->setState(object);
-    if (WebsiteComponent::isMemoryReadyToUse()) {
-      WebsiteComponent::lockJsonMemory();
+    auto componentJsonWeakRef = WebsiteComponent::getComponentJsonWeakRef();
+    if (componentJsonWeakRef->isReadyToUse()) {
+      componentJsonWeakRef->lock();
       ComponentType::setVisuinoOutput(component->toVisuinoJson());
-      WebsiteComponent::releaseJsonMemory();
+      componentJsonWeakRef->unlock();
     } else return false;
     return true;
   }
 
   WebsiteComponent* WebsiteTab::getComponentByName(const char* name) {
-    for(auto component : this->components){
-      if(component->getName().equals(name)) return component;
+    for (auto component : this->components) {
+      if (component->getName().equals(name)) return component;
     }
     return nullptr;
   }
 
-  bool WebsiteTab::componentAlreadyExists(const char* componentName) {
+  bool WebsiteTab::componentAlreadyExists(const char *componentName) {
     bool res = false;
     if (getComponentByName(componentName) != nullptr) res = true;
     return res;
   }
 
-
-  class Card {
-  public:
-    Card() = default;
-    explicit Card(const char* name) : name(name) {}
-    ~Card() {this->garbageCollect();}
-    enum class ComponentStatus : uint8_t{
-      OK,
-      OBJECT_NOT_VALID,
-      COMPONENT_TYPE_NOT_FOUND,
-    };
-
-    ComponentStatus add(const JsonObjectConst& object);
-    JsonObject onHTTPRequest();
-    bool onComponentStatusHTTPRequest(const uint8_t *data, size_t len);
-    void reserve(size_t size);
-    void garbageCollect();
-    const String& getName() const {return this->name;}
-    void setName(const String& name) {this->name = name;}
-
-    static void setJsonMemory(CommonJsonMemory* mem);
-    static void setJsonMemoryForVisuino(CommonJsonMemory* mem);
-    static void lockJsonMemory();
-    static void releaseJsonMemory();
-    static bool isMemoryReadyToUse();
-
-    static void lockOutputJsonMemory();
-    static void releaseOutputJsonMemory();
-    static bool isOutputMemoryReadyToUse();
-
-  private:
-    template <typename componentType> bool parseInputComponentToWebsite(const JsonObjectConst& object);
-    template <typename componentType> bool parseOutputComponentToWebsite(const JsonObjectConst& object);
-    template <typename componentType> bool parseInputComponentToVisuino(const JsonObjectConst& object);
-    WebsiteComponent* getComponentByName(const char* name);
-    bool componentAlreadyExists(const char* componentName);
-    std::vector<WebsiteComponent*> components;
-    String name;
-    static CommonJsonMemory* jsonMemory;                        // main JSON memory, used for preparing data to /input HTTP request, size is all components size * 2 (common with parsing json)
-    static CommonJsonMemory* outputJsonMemory;                  // json document for visuino output - required for multicore ESP32 - on 8266 points on the same as "jsonMemory"
-};
-
-  CommonJsonMemory* Card::jsonMemory;
-  CommonJsonMemory* Card::outputJsonMemory;
-
-  Card::ComponentStatus Card::add(const JsonObjectConst& object) {
-
-  }
-
-  JsonObject Card::onHTTPRequest() {
-    //jsonMemory should be already locked before calling this func!!
-    JsonObject object = jsonMemory->get()->to<JsonObject>();
-    JsonArray elements = object[JsonKey::Body].createNestedArray(JsonKey::Elements);
-    if(WebsiteComponent::isMemoryReadyToUse()){
-      WebsiteComponent::lockJsonMemory();     // lock component memory
-      for(auto component : this->components) {
-        elements.add(component->toWebsiteJson());
-      }
-      WebsiteComponent::releaseJsonMemory(); // components are copied to main memory, so we can release it.
-    }
-    return object;
-  }
-
-  bool Card::onComponentStatusHTTPRequest(const uint8_t* data, size_t len){
-    deserializeJson(*outputJsonMemory->get(), reinterpret_cast<const char*>(data), len);
-    auto receivedJson = outputJsonMemory->get()->as<JsonObject>();
+  bool WebsiteTab::onComponentInputHttpRequest(CommonJsonMemory* target, const uint8_t* data, size_t len) {
+    deserializeJson(*target->get(), reinterpret_cast<const char*>(data), len);
+    auto receivedJson = target->get()->as<JsonObject>();
     const char* componentType = receivedJson[JsonKey::ComponentType];
     using namespace ComponentType;
     if (!strncmp(componentType, Input::Switch, strlen(componentType))) {
       return parseInputComponentToVisuino<Switch>(receivedJson);
-    }else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
+    } else if (!strncmp(componentType, Input::Slider, strlen(componentType))) {
       return parseInputComponentToVisuino<Slider>(receivedJson);
     } else if (!strncmp(componentType, Input::NumberInput, strlen(componentType))) {
       return parseInputComponentToVisuino<NumberInput>(receivedJson);
@@ -1094,115 +1022,8 @@ namespace Website {
     }
     return false;
   }
-
-
-  bool Card::componentAlreadyExists(const char* componentName) {
-    bool res = false;
-    if (getComponentByName(componentName) != nullptr) res = true;
-    return res;
-  }
-
-  void Card::reserve(size_t size){
-    components.reserve(size);
-  }
-
-
-  void Card::garbageCollect() {
-    for(auto component : this->components) delete component;
-    components.clear();
-  }
-
-
-  WebsiteComponent* Card::getComponentByName(const char *name) {
-    for(auto component : this->components){
-      if(component->getName().equals(name)) return component;
-    }
-    return nullptr;
-  }
-
-  void Card::setJsonMemory(CommonJsonMemory* mem) {
-    jsonMemory = mem;
-  }
-
-  template<typename componentType>
-  bool Card::parseOutputComponentToWebsite(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
-    if(!componentAlreadyExists(componentName)){
-      auto component = new componentType(object);
-      if(component->isInitializedOK()) components.push_back(component);
-      else {
-        delete component;
-        return false;
-      }
-    } else {
-      auto component = reinterpret_cast<componentType*>(getComponentByName(componentName));
-      if(component != nullptr) component->setState(object);
-      else return false;
-    }
-    return true;
-  }
-
-  template<typename componentType>
-  bool Card::parseInputComponentToWebsite(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
-    if (!componentAlreadyExists(componentName)) {
-      auto component = new componentType(object);
-      if (component->isInitializedOK()) components.push_back(component);
-      else {
-        delete component;
-        return false;
-      }
-    }
-    return true;
-  }
-
-  template<typename componentType>
-  bool Card::parseInputComponentToVisuino(const JsonObjectConst& object) {
-    const char* componentName = object[JsonKey::Name];
-    auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
-    if (component == nullptr) return false;
-    component->setState(object);
-    if (WebsiteComponent::isMemoryReadyToUse()) {
-      WebsiteComponent::lockJsonMemory();
-      componentType::setVisuinoOutput(component->toVisuinoJson());
-      WebsiteComponent::releaseJsonMemory();
-    } else return false;
-    return true;
-  }
-
-  void Card::lockJsonMemory() {
-    if (jsonMemory != nullptr) jsonMemory->lock();
-  }
-
-  void Card::releaseJsonMemory() {
-    if (jsonMemory != nullptr) jsonMemory->unlock();
-  }
-
-  bool Card::isMemoryReadyToUse() {
-    if (jsonMemory != nullptr) return jsonMemory->isReadyToUse();
-    else return false;
-  }
-
-  void Card::setJsonMemoryForVisuino(CommonJsonMemory *mem) {
-    outputJsonMemory = mem;
-  }
-
-  void Card::lockOutputJsonMemory() {
-    if (outputJsonMemory != nullptr) outputJsonMemory->lock();
-  }
-
-  void Card::releaseOutputJsonMemory() {
-    if (outputJsonMemory != nullptr) outputJsonMemory->unlock();
-  }
-
-  bool Card::isOutputMemoryReadyToUse() {
-    if (outputJsonMemory != nullptr) return outputJsonMemory->isReadyToUse();
-    return false;
-  }
-
 }
-
-String testWebsiteConfigStr = {R"(
+static String testWebsiteConfigStr = {R"(
 {  
   "main": [
         {
@@ -1497,19 +1318,17 @@ String testWebsiteConfigStr = {R"(
       ]
 })"};
 
-  Website::Card card;
   class ApplicationContext {
   public:
     static void init();
     static void parseTabs(const JsonObjectConst& tabsJson);
-
+    static JsonObject onApplicationStateHttpRequest();
+    static bool onComponentStatusHTTPRequest(const uint8_t* data, size_t len);
     static inline void garbageCollect() { for (auto& tab : tabs) delete tab; }
+
     static inline CommonJsonMemory* getStateJsonWeakRef() { return &stateJsonMemory; }
     static inline CommonJsonMemory* getComponentJsonWeakRef() { return &componentJsonMemory; }
     static inline CommonJsonMemory* getVisuinoOutputJsonWeakRef() { return &visuinoOutputJsonMemory; }
-
-    static JsonObject onApplicationStateHttpRequest();
-  
 
   private:
     static std::vector<Website::WebsiteTab*> tabs;
@@ -1541,16 +1360,18 @@ String testWebsiteConfigStr = {R"(
     return stateJsonMemory.get()->as<JsonObject>();
   }
 
+  bool ApplicationContext::onComponentStatusHTTPRequest(const uint8_t* data, size_t len) {
+    for (auto& tab : tabs) {
+      if (tab->onComponentInputHttpRequest(&visuinoOutputJsonMemory, data, len))
+        return true;
+    }
+    return false;
+  }
+
 
   namespace JsonReader {
 
   size_t memorySize = 0;
-
-  CommonJsonMemory componentJsonMemory;
-#ifdef ESP32
-  CommonJsonMemory visuinoOutputJsonMemory;
-#endif
-
   enum class InputJsonStatus : uint8_t {
     OK,
     JSON_OVERFLOW,
@@ -1585,7 +1406,7 @@ String testWebsiteConfigStr = {R"(
   bool allocateVisuinoOutputMemory(size_t size) {
     auto visuinoOutputJsonWeakRef = ApplicationContext::getVisuinoOutputJsonWeakRef();
 #ifdef ESP32
-    if(visuinoOutputJsonWeakRef->allocate(size)){
+    if(visuinoOutputJsonWeakRef->allocate(size)) {
       return true;
     } else{
       visuinoOutputJsonWeakRef->garbageCollect();
@@ -1596,6 +1417,7 @@ String testWebsiteConfigStr = {R"(
     // ESP8266 is not multithreaded so visuino output can use component output memory
     // It saves few bytes. Anyway, this tool is recommended to work with ESP32 to reach better reliability
     visuinoOutputJsonWeakRef = ApplicationContext::getComponentJsonWeakRef();
+    Website::WebsiteComponent::setVisuinoOutputJsonWeakRef(visuinoOutputJsonWeakRef);
     return true;
 #endif
   }
@@ -1638,6 +1460,7 @@ String testWebsiteConfigStr = {R"(
           if (!allocateVisuinoOutputMemory(getBufferSize(biggestObjectSize))) return releaseAndReturn(InputJsonStatus::ALLOC_ERROR);
           auto componentJsonWeakRef = ApplicationContext::getComponentJsonWeakRef();
           if (componentJsonWeakRef->allocate(getBufferSize(biggestObjectSize))) {
+            WebsiteComponent::setComponentJsonWeakRef(componentJsonWeakRef);
             isElementsInitialized = true;
           } else {
             componentJsonWeakRef->garbageCollect();
@@ -1815,15 +1638,16 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
   webServer.on("/input", HTTP_POST, [] (AsyncWebServerRequest* request){}, nullptr,
           [](AsyncWebServerRequest * request, uint8_t *data, size_t len, size_t index, size_t total) {
     using namespace Website;
-    if (Card::isOutputMemoryReadyToUse()) {
-      Card::lockOutputJsonMemory();
-      if (card.onComponentStatusHTTPRequest(data, len)) {
+    auto visuinoOutputJsonWeakRef = ApplicationContext::getVisuinoOutputJsonWeakRef();
+    if (visuinoOutputJsonWeakRef->isReadyToUse()) {
+      visuinoOutputJsonWeakRef->lock();
+      if (ApplicationContext::onComponentStatusHTTPRequest(data, len)) {
         request->send(HttpCodes::OK);
       } else {
         Log::error("Error while parsing input component");
         request->send(HttpCodes::BAD_REQUEST);
       }
-      Card::releaseOutputJsonMemory();
+      visuinoOutputJsonWeakRef->unlock();
     } else {
         request->send(HttpCodes::NO_CONTENT);
     }
@@ -1902,7 +1726,7 @@ void setup(){
   }
 
   WiFi.softAP("esp_ap", "123456789");
-  WiFi.begin("NET-MAR_619", "bielaki123424G");
+  WiFi.begin("", "");
   while(WiFi.status() != WL_CONNECTED) delay(100);
   Serial.println(WiFi.localIP());
   WebsiteServer::ServerInit();
