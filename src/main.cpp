@@ -15,12 +15,309 @@
 #endif
 #include <ESPAsyncWebServer.h>
 #include <StreamString.h>
-#include <sstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <ArduinoJson.h>
 
 #define DEBUG_BUILD 1
+static String testWebsiteConfigStr = {R"(
+{
+  "main": [
+        {
+          "name" : "Lamp2",
+          "size" : 20,
+          "componentType" : "switch",
+          "posX" : 0,
+          "posY" : 0,
+          "color" : "blue",
+          "value": false
+        },
+        {
+          "name" : "Motor",
+          "size" : 20,
+          "componentType" : "switch",
+          "posX" : 400,
+          "posY" : 400,
+          "color" : "#abcdef",
+          "value": false
+        },
+        {
+          "name" : "Nothing",
+          "size" : 30,
+          "componentType" : "switch",
+          "posX" : 170,
+          "posY" : 100,
+          "color" : "lightgreen",
+          "value": false
+        },
+        {
+          "name" : "Something",
+          "size" : 30,
+          "componentType" : "switch",
+          "posX" : 50,
+          "posY" : 150,
+          "color" : "#bbaaaa",
+          "value": true
+        },
+        {
+          "name" : "Servo",
+          "size" : 40,
+          "componentType" : "switch",
+          "dataType" : "boolean",
+          "posX" : 170,
+          "posY" : 150,
+          "color" : "#abcada",
+          "value": true
+        },
+        {
+          "name" : "LightBulb",
+          "size" : 25,
+          "componentType" : "switch",
+          "posX" : 100,
+          "posY" : 150,
+          "color" : "#00ffe5",
+          "value": true
+        },
+        {
+          "name" : "bulb",
+          "size" : 25,
+          "componentType" : "switch",
+          "posX" : 50,
+          "posY" : 100,
+          "color" : "orange",
+          "value": true
+        },
+        {
+          "name" : "Info",
+          "componentType" : "label",
+          "posX" : 100,
+          "posY" : 300,
+          "fontSize": 24,
+          "color" : "red",
+          "isVertical": true,
+          "value": "Pionowy napis"
+        },
+        {
+          "name" : "Info2",
+          "componentType" : "label",
+          "posX" : 100,
+          "posY" : 700,
+          "fontSize": 30,
+          "color" : "lime",
+          "isVertical": false,
+          "value": "Poziomy napis"
+        },
+        {
+          "name" : "Speed",
+          "componentType" : "gauge",
+          "posX" : 200,
+          "posY" : 300,
+          "color" : "red",
+          "value": 480,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 500,
+          "height": 400
+        },
+        {
+          "name" : "Slidee",
+          "componentType" : "slider",
+          "posX" : 300,
+          "posY" : 150,
+          "color" : "blue",
+          "value": 740,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 500,
+          "height": 20
+        },
+      {
+        "name" : "Sliderrrre",
+        "componentType" : "slider",
+        "posX" : 300,
+        "posY" : 250,
+        "color" : "green",
+        "value": 320,
+        "maxValue": 800,
+        "minValue": 0,
+        "width" : 250,
+        "height": 20
+      },
+      {
+        "name": "other temperature",
+        "color": "#333",
+        "fontSize": 48,
+        "width": 150,
+        "value": 44.2,
+        "componentType": "numberInput",
+        "posY": 200,
+        "posX": 400
+      },
+      {
+        "name": "btn1",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Vertical",
+        "width": 40,
+        "height": 200,
+        "color": "#555",
+        "posX": 1400,
+        "posY": 400,
+        "isVertical": true,
+        "componentType": "button"
+      },
+      {
+        "name": "btn2",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Horizontal",
+        "width": 200,
+        "height": 40,
+        "color": "#333",
+        "posX": 1400,
+        "posY": 700,
+        "isVertical": false,
+        "componentType": "button"
+      },
+      {
+        "name": "led",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 900,
+        "color": "red",
+        "size": 50
+      },
+      {
+        "name": "led2",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 950,
+        "color": "yellow",
+        "size": 50
+      },
+      {
+        "name": "led3",
+        "componentType": "indicator",
+        "value": true,
+        "posY": 100,
+        "posX": 1000,
+        "color": "lime",
+        "size": 50
+      },
+      {
+        "name": "led4",
+        "componentType": "indicator",
+        "posY": 100,
+        "posX": 1050,
+        "value": true,
+        "size": 50,
+        "color": "yellow"
+      },
+      {
+        "name": "controls3",
+        "color": "orangered",
+        "width": 800,
+        "height" : 400,
+        "componentType": "field",
+        "posY": 400,
+        "posX": 800,
+        "outlineColor": "black"
+      },
+      {
+        "name": "controls4",
+        "color": "#333",
+        "width": 800,
+        "height" : 400,
+        "componentType": "field",
+        "posY": 400,
+        "posX": 0,
+        "outlineColor": "black"
+      },
+      {
+        "name": "image1",
+        "width": 0,
+        "height" : 0,
+        "componentType": "image",
+        "posY": 0,
+        "posX": 0,
+        "fileName": "test.jpg"
+      }
+    ],
+    "settings": [
+        {
+          "name" : "progress-bar",
+          "componentType" : "progressBar",
+          "posX" : 700,
+          "posY" : 350,
+          "color" : "#cc0000",
+          "value":  600,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 400,
+          "height": 20,
+          "isVertical": true
+        },
+        {
+          "name": "settings-controls",
+          "color": "#999",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 0,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-controls2",
+          "color": "darkorange",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 800,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-controls3",
+          "color": "orangered",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 400,
+          "posX": 800,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-image1",
+          "width": 0,
+          "height" : 0,
+          "componentType": "image",
+          "posY": 100,
+          "posX": 300,
+          "fileName": "test.jpg"
+        },
+
+      {
+        "name": "settings-btn1",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Vertical",
+        "width": 40,
+        "height": 200,
+        "color": "#85a",
+        "posX": 1400,
+        "posY": 400,
+        "isVertical": true,
+        "componentType": "button"
+      }
+      ]
+})"};
+
+
 
 namespace WebsiteServer {
   
@@ -215,6 +512,18 @@ private:
 
 namespace Website {
 
+  struct VisuinoOutputFormatter {
+    void format(const JsonObjectConst object) {
+      data.clear();
+      serializeJson(object, data);
+      isDataReady = true;
+    }
+    const String& getData() { return this->data; }
+    bool isDataReady = false;
+  private:
+    String data;
+  };
+
   class WebsiteComponent {
   public:
     explicit WebsiteComponent(const JsonObjectConst &inputObject);
@@ -326,24 +635,13 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
     }
-
-    static void setVisuinoOutput(const JsonObjectConst &obj) {
-      str.clear();
-      serializeJson(obj, str);
-      isDataReady = true;
-    }
-
-    static const String &getVisuinoOutput() { return str; }
-
-    static bool isDataReady;
+    static VisuinoOutputFormatter& getVisuinoOutputFormatter() { return formatter; }
   private:
-    static String str;
+    static VisuinoOutputFormatter formatter;
     bool value;
     uint16_t size;
   };
-
-  String Switch::str;
-  bool Switch::isDataReady = false;
+  VisuinoOutputFormatter Switch::formatter;
 
   class Slider : public InputComponent {
   public:
@@ -396,18 +694,9 @@ namespace Website {
         this->value = object[JsonKey::Value];
       }
     }
-
-    static void setVisuinoOutput(const JsonObjectConst &obj) {
-      str.clear();
-      serializeJson(obj, str);
-      isDataReady = true;
-    }
-
-    static const String &getVisuinoOutput() { return str; }
-
-    static bool isDataReady;
+    static VisuinoOutputFormatter& getVisuinoOutputFormatter() { return formatter; }
   private:
-    static String str;
+    static VisuinoOutputFormatter formatter;
     String color;
     uint16_t width;
     uint16_t height;
@@ -415,10 +704,7 @@ namespace Website {
     uint32_t minValue;
     uint32_t maxValue;
   };
-
-  String Slider::str;
-  bool Slider::isDataReady;
-
+  VisuinoOutputFormatter Slider::formatter;
 
   class NumberInput : public InputComponent {
   public:
@@ -453,37 +739,27 @@ namespace Website {
       websiteObj[JsonKey::PosY] = this->posY;
       websiteObj[JsonKey::Value] = this->value;
       websiteObj[JsonKey::Width] = this->width;
+      websiteObj[JsonKey::FontSize] = this->fontSize;
       websiteObj[JsonKey::Color] = this->color;
       websiteObj[JsonKey::ComponentType] = ComponentType::Input::NumberInput;
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst &object) override {
+    void setState(const JsonObjectConst& object) override {
       if (object.containsKey(JsonKey::Value)) {
         this->value = object[JsonKey::Value];
       }
     }
 
-    static void setVisuinoOutput(const JsonObjectConst &obj) {
-      str.clear();
-      serializeJson(obj, str);
-      isDataReady = true;
-    }
-
-    static const String &getVisuinoOutput() { return str; }
-
-    static bool isDataReady;
-
+    static VisuinoOutputFormatter& getVisuinoOutputFormatter() { return formatter; }
   private:
-    static String str;
+    static VisuinoOutputFormatter formatter;
     float value;
     uint16_t width;
     uint16_t fontSize;
     String color;
   };
-
-  String NumberInput::str;
-  bool NumberInput::isDataReady;
+  VisuinoOutputFormatter NumberInput::formatter;
 
 
   class Button : public InputComponent {
@@ -500,13 +776,13 @@ namespace Website {
         this->fontSize = inputObject[JsonKey::FontSize];
       } else this->fontSize = DefaultValues::FontSize;
       if (inputObject.containsKey(JsonKey::Text)) {
-        this->text = inputObject[JsonKey::Text].as<const char *>();
+        this->text = inputObject[JsonKey::Text].as<const char*>();
       } else initializedOK = false;
       if (inputObject.containsKey(JsonKey::Color)) {
-        this->color = inputObject[JsonKey::Color].as<const char *>();
+        this->color = inputObject[JsonKey::Color].as<const char*>();
       } else this->color = DefaultValues::Color;
       if (inputObject.containsKey(JsonKey::TextColor)) {
-        this->textColor = inputObject[JsonKey::TextColor].as<const char *>();
+        this->textColor = inputObject[JsonKey::TextColor].as<const char*>();
       } else this->textColor = DefaultValues::TextColor;
       if (inputObject.containsKey(JsonKey::IsVertical)) {
         this->isVertical = inputObject[JsonKey::IsVertical];
@@ -542,19 +818,9 @@ namespace Website {
         this->value = object[JsonKey::Value];
     }
 
-    static void setVisuinoOutput(const JsonObjectConst &obj) {
-      str.clear();
-      serializeJson(obj, str);
-      isDataReady = true;
-    }
-
-    static const String &getVisuinoOutput() { return str; }
-
-    static bool isDataReady;
-
-
+    static VisuinoOutputFormatter& getVisuinoOutputFormatter() { return formatter; }
   private:
-    static String str;
+    static VisuinoOutputFormatter formatter;
     bool value;
     uint16_t width;
     uint16_t height;
@@ -564,9 +830,7 @@ namespace Website {
     String textColor;
     bool isVertical;
   };
-
-  String Button::str;
-  bool Button::isDataReady;
+  VisuinoOutputFormatter Button::formatter;
 
 
   class Label : public OutputComponent {
@@ -857,7 +1121,7 @@ namespace Website {
       return websiteObj;
     }
 
-    void setState(const JsonObjectConst &object) override {}   // image doesn't have state
+    void setState(const JsonObjectConst& object) override {}   // image doesn't have state
   private:
     uint16_t width;
     uint16_t height;
@@ -878,7 +1142,7 @@ namespace Website {
     ComponentParsingStatus appendComponent(const JsonObjectConst &object);
     void onApplicationStateHttpRequest(CommonJsonMemory *target);
     bool onComponentInputHttpRequest(CommonJsonMemory *target, const uint8_t *data, size_t len);
-
+    inline const String& getName() { return this->name; }
   private:
     template<typename ComponentType>
     bool parseInputComponentToWebsite(const JsonObjectConst &object);
@@ -896,22 +1160,22 @@ namespace Website {
     std::vector<WebsiteComponent *> components;
   };
 
-  WebsiteTab::WebsiteTab(const char *name, const JsonArrayConst componentsJson) : name(name) {
+  WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst componentsJson) : name(name) {
     this->components.reserve(componentsJson.size());
     for (const auto component : componentsJson) {
       this->appendComponent(component);
     }
   }
 
-  void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory *target) {
+  void WebsiteTab::onApplicationStateHttpRequest(CommonJsonMemory* target) {
     auto json = target->get();
     JsonArray tabArray = json->createNestedArray(this->name);
-    for (auto &component : components) {
+    for (auto& component : components) {
       tabArray.add(component->toWebsiteJson());
     }
   }
 
-  WebsiteTab::ComponentParsingStatus WebsiteTab::appendComponent(const JsonObjectConst &object) {
+  WebsiteTab::ComponentParsingStatus WebsiteTab::appendComponent(const JsonObjectConst& object) {
     if (!object.containsKey(JsonKey::Name) || !object.containsKey(JsonKey::ComponentType))
       return ComponentParsingStatus::OBJECT_NOT_VALID;
     const char *componentType = object[JsonKey::ComponentType];
@@ -945,8 +1209,8 @@ namespace Website {
   }
 
   template<typename ComponentType>
-  bool WebsiteTab::parseInputComponentToWebsite(const JsonObjectConst &object) {
-    const char *componentName = object[JsonKey::Name];
+  bool WebsiteTab::parseInputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
     if (!componentAlreadyExists(componentName)) {
       auto component = new ComponentType(object);
       if (component->isInitializedOK()) {
@@ -960,8 +1224,8 @@ namespace Website {
   }
 
   template<typename ComponentType>
-  bool WebsiteTab::parseOutputComponentToWebsite(const JsonObjectConst &object) {
-    const char *componentName = object[JsonKey::Name];
+  bool WebsiteTab::parseOutputComponentToWebsite(const JsonObjectConst& object) {
+    const char* componentName = object[JsonKey::Name];
     if (!componentAlreadyExists(componentName)) {
       auto component = new ComponentType(object);
       if (component->isInitializedOK()) {
@@ -971,7 +1235,7 @@ namespace Website {
         return false;
       }
     } else {
-      auto component = reinterpret_cast<ComponentType *>(getComponentByName(componentName));
+      auto component = reinterpret_cast<ComponentType*>(getComponentByName(componentName));
       if (component != nullptr) component->setState(object);
       else return false;
     }
@@ -980,14 +1244,15 @@ namespace Website {
 
   template<typename ComponentType>
   bool WebsiteTab::parseInputComponentToVisuino(const JsonObjectConst& object) {
-    const char *componentName = object[JsonKey::Name];
-    auto component = reinterpret_cast<InputComponent *>(getComponentByName(componentName));
+    const char* componentName = object[JsonKey::Name];
+    auto component = reinterpret_cast<InputComponent*>(getComponentByName(componentName));
     if (component == nullptr) return false;
     component->setState(object);
     auto componentJsonWeakRef = WebsiteComponent::getComponentJsonWeakRef();
     if (componentJsonWeakRef->isReadyToUse()) {
       componentJsonWeakRef->lock();
-      ComponentType::setVisuinoOutput(component->toVisuinoJson());
+      auto& formatter = ComponentType::getVisuinoOutputFormatter();
+      formatter.format(component->toVisuinoJson());
       componentJsonWeakRef->unlock();
     } else return false;
     return true;
@@ -1000,7 +1265,7 @@ namespace Website {
     return nullptr;
   }
 
-  bool WebsiteTab::componentAlreadyExists(const char *componentName) {
+  bool WebsiteTab::componentAlreadyExists(const char* componentName) {
     bool res = false;
     if (getComponentByName(componentName) != nullptr) res = true;
     return res;
@@ -1023,304 +1288,10 @@ namespace Website {
     return false;
   }
 }
-static String testWebsiteConfigStr = {R"(
-{  
-  "main": [
-        {
-          "name" : "Lamp2",
-          "size" : 20,
-          "componentType" : "switch",
-          "posX" : 0,
-          "posY" : 0,
-          "color" : "blue",
-          "value": false
-        },
-        {
-          "name" : "Motor",
-          "size" : 20,
-          "componentType" : "switch",
-          "posX" : 400,
-          "posY" : 400,
-          "color" : "#abcdef",
-          "value": false
-        },
-        {
-          "name" : "Nothing",
-          "size" : 30,
-          "componentType" : "switch",
-          "posX" : 170,
-          "posY" : 100,
-          "color" : "lightgreen",
-          "value": false
-        },
-        {
-          "name" : "Something",
-          "size" : 30,
-          "componentType" : "switch",
-          "posX" : 50,
-          "posY" : 150,
-          "color" : "#bbaaaa",
-          "value": true
-        },
-        {
-          "name" : "Servo",
-          "size" : 40,
-          "componentType" : "switch",
-          "dataType" : "boolean",
-          "posX" : 170,
-          "posY" : 150,
-          "color" : "#abcada",
-          "value": true
-        },
-        {
-          "name" : "LightBulb",
-          "size" : 25,
-          "componentType" : "switch",
-          "posX" : 100,
-          "posY" : 150,
-          "color" : "#00ffe5",
-          "value": true
-        },
-        {
-          "name" : "bulb",
-          "size" : 25,
-          "componentType" : "switch",
-          "posX" : 50,
-          "posY" : 100,
-          "color" : "orange",
-          "value": true
-        },
-        {
-          "name" : "Info",
-          "componentType" : "label",
-          "posX" : 100,
-          "posY" : 300,
-          "fontSize": 24,
-          "color" : "red",
-          "isVertical": true,
-          "value": "Pionowy napis"
-        },
-        {
-          "name" : "Info2",
-          "componentType" : "label",
-          "posX" : 100,
-          "posY" : 700,
-          "fontSize": 30,
-          "color" : "lime",
-          "isVertical": false,
-          "value": "Poziomy napis"
-        },
-        {
-          "name" : "Speed",
-          "componentType" : "gauge",
-          "posX" : 200,
-          "posY" : 300,
-          "color" : "red",
-          "value": 480,
-          "maxValue": 800,
-          "minValue": 0,
-          "width" : 500,
-          "height": 400
-        },
-        {
-          "name" : "Slidee",
-          "componentType" : "slider",
-          "posX" : 300,
-          "posY" : 150,
-          "color" : "blue",
-          "value": 740,
-          "maxValue": 800,
-          "minValue": 0,
-          "width" : 500,
-          "height": 20
-        },
-      {
-        "name" : "Sliderrrre",
-        "componentType" : "slider",
-        "posX" : 300,
-        "posY" : 250,
-        "color" : "green",
-        "value": 320,
-        "maxValue": 800,
-        "minValue": 0,
-        "width" : 250,
-        "height": 20
-      },
-      {
-        "name": "other temperature",
-        "color": "#333",
-        "fontSize": 15,
-        "width": 150,
-        "value": 44.2,
-        "componentType": "numberInput",
-        "posY": 200,
-        "posX": 400
-      },
-      {
-        "name": "btn1",
-        "textColor": "white",
-        "fontSize": 16,
-        "text": "Vertical",
-        "width": 40,
-        "height": 200,
-        "color": "#555",
-        "posX": 1400,
-        "posY": 400,
-        "isVertical": true,
-        "componentType": "button"
-      },
-      {
-        "name": "btn2",
-        "textColor": "white",
-        "fontSize": 16,
-        "text": "Horizontal",
-        "width": 200,
-        "height": 40,
-        "color": "#333",
-        "posX": 1400,
-        "posY": 700,
-        "isVertical": false,
-        "componentType": "button"
-      },
-      {
-        "name": "led",
-        "componentType": "indicator",
-        "value": true,
-        "posY": 100,
-        "posX": 900,
-        "color": "red",
-        "size": 50
-      },
-      {
-        "name": "led2",
-        "componentType": "indicator",
-        "value": true,
-        "posY": 100,
-        "posX": 950,
-        "color": "yellow",
-        "size": 50
-      },
-      {
-        "name": "led3",
-        "componentType": "indicator",
-        "value": true,
-        "posY": 100,
-        "posX": 1000,
-        "color": "lime",
-        "size": 50
-      },
-      {
-        "name": "led4",
-        "componentType": "indicator",
-        "posY": 100,
-        "posX": 1050,
-        "value": true,
-        "size": 50,
-        "color": "yellow"
-      },
-      {
-        "name": "controls3",
-        "color": "orangered",
-        "width": 800,
-        "height" : 400,
-        "componentType": "field",
-        "posY": 400,
-        "posX": 800,
-        "outlineColor": "black"
-      },
-      {
-        "name": "controls4",
-        "color": "#333",
-        "width": 800,
-        "height" : 400,
-        "componentType": "field",
-        "posY": 400,
-        "posX": 0,
-        "outlineColor": "black"
-      },
-      {
-        "name": "image1",
-        "width": 0,
-        "height" : 0,
-        "componentType": "image",
-        "posY": 0,
-        "posX": 0,
-        "fileName": "test.jpg"
-      }
-    ],
-    "settings": [
-        {
-          "name" : "progress-bar",
-          "componentType" : "progressBar",
-          "posX" : 700,
-          "posY" : 350,
-          "color" : "#cc0000",
-          "value":  600,
-          "maxValue": 800,
-          "minValue": 0,
-          "width" : 400,
-          "height": 20,
-          "isVertical": true
-        },
-        {
-          "name": "settings-controls",
-          "color": "#999",
-          "width": 800,
-          "height" : 400,
-          "componentType": "field",
-          "posY": 0,
-          "posX": 0,
-          "outlineColor": "black"
-        },
-        {
-          "name": "settings-controls2",
-          "color": "darkorange",
-          "width": 800,
-          "height" : 400,
-          "componentType": "field",
-          "posY": 0,
-          "posX": 800,
-          "outlineColor": "black"
-        },
-        {
-          "name": "settings-controls3",
-          "color": "orangered",
-          "width": 800,
-          "height" : 400,
-          "componentType": "field",
-          "posY": 400,
-          "posX": 800,
-          "outlineColor": "black"
-        }, 
-        {
-          "name": "settings-image1",
-          "width": 0,
-          "height" : 0,
-          "componentType": "image",
-          "posY": 100,
-          "posX": 300,
-          "fileName": "test.jpg"
-        },
-        
-      {
-        "name": "settings-btn1",
-        "textColor": "white",
-        "fontSize": 16,
-        "text": "Vertical",
-        "width": 40,
-        "height": 200,
-        "color": "#85a",
-        "posX": 1400,
-        "posY": 400,
-        "isVertical": true,
-        "componentType": "button"
-      }
-      ]
-})"};
+
 
   class ApplicationContext {
   public:
-    static void init();
     static void parseTabs(const JsonObjectConst& tabsJson);
     static JsonObject onApplicationStateHttpRequest();
     static bool onComponentStatusHTTPRequest(const uint8_t* data, size_t len);
@@ -1335,25 +1306,24 @@ static String testWebsiteConfigStr = {R"(
     static CommonJsonMemory stateJsonMemory;
     static CommonJsonMemory componentJsonMemory;
     static CommonJsonMemory visuinoOutputJsonMemory;
+
   };
-  std::vector<Website::WebsiteTab*> ApplicationContext::tabs;
+  std::vector<Website::WebsiteTab*>ApplicationContext::tabs;
   CommonJsonMemory ApplicationContext::stateJsonMemory;
   CommonJsonMemory ApplicationContext::componentJsonMemory;
   CommonJsonMemory ApplicationContext::visuinoOutputJsonMemory;
 
-  void ApplicationContext::init() {
-
-  }
-
   void ApplicationContext::parseTabs(const JsonObjectConst& tabsJson) {
     tabs.reserve(tabsJson.size());
     for (JsonPairConst tabJson : tabsJson) {
-      tabs.push_back(new Website::WebsiteTab(tabJson.key().c_str(),
-                                             tabJson.value().as<JsonArrayConst>()));
+      const char* tabName = tabJson.key().c_str();
+      tabs.push_back(new Website::WebsiteTab(tabName,
+                                              tabJson.value().as<JsonArrayConst>()));
     }
   }
 
   JsonObject ApplicationContext::onApplicationStateHttpRequest() {
+    stateJsonMemory.get()->clear();
     for (auto& tab : tabs) {
       tab->onApplicationStateHttpRequest(&stateJsonMemory);
     }
@@ -1422,7 +1392,7 @@ static String testWebsiteConfigStr = {R"(
 #endif
   }
 
-  // TODO change its to something like - allocateJsonBuffers
+
   InputJsonStatus readWebsiteComponentsFromJson(const String& json) {
     using namespace Website;
     static bool isValid = false;
@@ -1442,15 +1412,12 @@ static String testWebsiteConfigStr = {R"(
           return InputJsonStatus::ALLOC_ERROR;
         }
       }
-
       if (stateJsonWeakRef->isReadyToUse()) {
-
         // unlock json memory before returning
         auto releaseAndReturn = [&] (InputJsonStatus status) {
           stateJsonWeakRef->unlock();
           return status;
         };
-
         stateJsonWeakRef->lock();
         deserializeJson(*(stateJsonWeakRef->get()), json);
         if (stateJsonWeakRef->get()->overflowed()) return releaseAndReturn(InputJsonStatus::JSON_OVERFLOW);
@@ -1470,9 +1437,6 @@ static String testWebsiteConfigStr = {R"(
         ApplicationContext::parseTabs(inputObject);
         stateJsonWeakRef->unlock();
       }
-
-
-
     }
     return InputJsonStatus::OK;
   }
@@ -1521,28 +1485,36 @@ static String testWebsiteConfigStr = {R"(
 namespace JsonWriter{
   void write() {
     using namespace Website;
+    static auto& switchFormatter = Switch::getVisuinoOutputFormatter();
+    static auto& sliderFormatter = Slider::getVisuinoOutputFormatter();
+    static auto& numberInputFormatter = NumberInput::getVisuinoOutputFormatter();
+    static auto& buttonFormatter = Button::getVisuinoOutputFormatter();
+
     if(Log::isDataReady){
       //LogOutput.Send(Log::errorStream.c_str());
       Serial.println(Log::errorStream.c_str());
       Log::errorStream.clear();
       Log::isDataReady = false;
     }
-    if(Switch::isDataReady){
-      Serial.println(Switch::getVisuinoOutput());
+    if(switchFormatter.isDataReady){
+      Serial.println(switchFormatter.getData());
       //ServerSwitchOutput.Send(Switch::toString());
-      Switch::isDataReady = false;
+      switchFormatter.isDataReady = false;
     }
-    if(Slider::isDataReady){
-      Serial.println(Slider::getVisuinoOutput());
-      Slider::isDataReady = false;
+    if(sliderFormatter.isDataReady){
+      Serial.println(sliderFormatter.getData());
+      //ServerSwitchOutput.Send(Switch::toString());
+      sliderFormatter.isDataReady = false;
     }
-    if(NumberInput::isDataReady) {
-      Serial.println(NumberInput::getVisuinoOutput());
-      NumberInput::isDataReady = false;
+    if(numberInputFormatter.isDataReady){
+      Serial.println(numberInputFormatter.getData());
+      //ServerSwitchOutput.Send(Switch::toString());
+      numberInputFormatter.isDataReady = false;
     }
-    if(Button::isDataReady){
-      Serial.println(Button::getVisuinoOutput());
-      Button::isDataReady = false;
+    if(buttonFormatter.isDataReady){
+      Serial.println(buttonFormatter.getData());
+      //ServerSwitchOutput.Send(Switch::toString());
+      buttonFormatter.isDataReady = false;
     }
   }
 }
@@ -1567,6 +1539,10 @@ void HTTPServeWebsite(AsyncWebServer& webServer) {
 
   webServer.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/index.js", "application/javascript");
+  });
+
+  webServer.on("/tab.js", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/tab.js", "application/javascript");
   });
 
   webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -1610,8 +1586,9 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
 
   webServer.on("/state", HTTP_GET, [] (AsyncWebServerRequest* request){
     using namespace Website;
+    static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
     auto stateJsonWeakRef = ApplicationContext::getStateJsonWeakRef();
-
+    auto data = ApplicationContext::onApplicationStateHttpRequest();
 #ifdef DEBUG_BUILD
     Log::info("Proccessing info request");
 #endif
@@ -1620,9 +1597,8 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
       Log::info("mem ok, request resolved");
 #endif
       stateJsonWeakRef->lock();
-      static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
       responseBody.clear();
-      serializeJson(*(stateJsonWeakRef->get()), responseBody);
+      serializeJson(data, responseBody);
       AsyncWebServerResponse* response = request->beginResponse(HttpCodes::OK, "application/json", responseBody);
       fullCorsAllow(response);
       request->send(response);
@@ -1707,8 +1683,6 @@ void ServerInit(){
   registerWiFIDebugEvents();
 #endif
 
-
-
   HTTPServeWebsite(server);
   HTTPSetMappings(server);
   server.begin();
@@ -1745,6 +1719,5 @@ void setup(){
 
 void loop(){
   WebsiteServer::JsonWriter::write();
-
 }
 
