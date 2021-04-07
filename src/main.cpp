@@ -6,8 +6,6 @@
 #ifdef ESP32
 #include <WiFi.h>
 #include <SPIFFS.h>
-#include <esp_wifi.h>
-#include <string>
 // Force AsyncTCP to run on one core!
 #define CONFIG_ASYNC_TCP_RUNNING_CORE 0
 #define CONFIG_ASYNC_TCP_USE_WDT 1
@@ -15,10 +13,7 @@
 #endif
 #include <ESPAsyncWebServer.h>
 #include <StreamString.h>
-#include <string>
-#include <unordered_map>
 #include <vector>
-
 #include <ArduinoJson.h>
 
 #define DEBUG_BUILD 1
@@ -303,6 +298,73 @@ static String testWebsiteConfigStr = {R"(
 
       {
         "name": "settings-btn1",
+        "textColor": "white",
+        "fontSize": 16,
+        "text": "Vertical",
+        "width": 40,
+        "height": 200,
+        "color": "#85a",
+        "posX": 1400,
+        "posY": 400,
+        "isVertical": true,
+        "componentType": "button"
+      }],
+      "settings2": [
+        {
+          "name" : "progress2-bar",
+          "componentType" : "progressBar",
+          "posX" : 700,
+          "posY" : 350,
+          "color" : "#cc0000",
+          "value":  600,
+          "maxValue": 800,
+          "minValue": 0,
+          "width" : 400,
+          "height": 20,
+          "isVertical": true
+        },
+        {
+          "name": "setting2s-controls",
+          "color": "#999",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 0,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings2-controls2",
+          "color": "darkorange",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 0,
+          "posX": 800,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings-2controls3",
+          "color": "orangered",
+          "width": 800,
+          "height" : 400,
+          "componentType": "field",
+          "posY": 400,
+          "posX": 800,
+          "outlineColor": "black"
+        },
+        {
+          "name": "settings2image1",
+          "width": 0,
+          "height" : 0,
+          "componentType": "image",
+          "posY": 100,
+          "posX": 300,
+          "fileName": "test.jpg"
+        },
+
+      {
+        "name": "settings2-btn1",
         "textColor": "white",
         "fontSize": 16,
         "text": "Vertical",
@@ -1136,9 +1198,10 @@ namespace Website {
       COMPONENT_TYPE_NOT_FOUND,
     };
   public:
-    WebsiteTab(const char *name, const JsonArrayConst componentsJson);
+    WebsiteTab(const char* name, const JsonArrayConst componentsJson);
     ~WebsiteTab() { this->garbageCollect(); }
 
+    void onUpdate(const JsonArrayConst componentsJson);
     ComponentParsingStatus appendComponent(const JsonObjectConst &object);
     void onApplicationStateHttpRequest(CommonJsonMemory *target);
     bool onComponentInputHttpRequest(CommonJsonMemory *target, const uint8_t *data, size_t len);
@@ -1161,6 +1224,10 @@ namespace Website {
   };
 
   WebsiteTab::WebsiteTab(const char* name, const JsonArrayConst componentsJson) : name(name) {
+    this->onUpdate(componentsJson);
+  }
+
+  void WebsiteTab::onUpdate(const JsonArrayConst componentsJson) {
     this->components.reserve(componentsJson.size());
     for (const auto component : componentsJson) {
       this->appendComponent(component);
@@ -1287,6 +1354,7 @@ namespace Website {
     }
     return false;
   }
+
 }
 
 
@@ -1300,15 +1368,21 @@ namespace Website {
     static inline CommonJsonMemory* getStateJsonWeakRef() { return &stateJsonMemory; }
     static inline CommonJsonMemory* getComponentJsonWeakRef() { return &componentJsonMemory; }
     static inline CommonJsonMemory* getVisuinoOutputJsonWeakRef() { return &visuinoOutputJsonMemory; }
+    static inline const String& getTtile() { return title; }
+    static inline void setTitle(const char* newTitle) { title = newTitle; }
 
+private:
+    static Website::WebsiteTab* getTabByName(const char* tabName);
   private:
     static std::vector<Website::WebsiteTab*> tabs;
+    static String title;
     static CommonJsonMemory stateJsonMemory;
     static CommonJsonMemory componentJsonMemory;
     static CommonJsonMemory visuinoOutputJsonMemory;
 
   };
-  std::vector<Website::WebsiteTab*>ApplicationContext::tabs;
+  std::vector<Website::WebsiteTab*> ApplicationContext::tabs;
+  String ApplicationContext::title;
   CommonJsonMemory ApplicationContext::stateJsonMemory;
   CommonJsonMemory ApplicationContext::componentJsonMemory;
   CommonJsonMemory ApplicationContext::visuinoOutputJsonMemory;
@@ -1317,8 +1391,13 @@ namespace Website {
     tabs.reserve(tabsJson.size());
     for (JsonPairConst tabJson : tabsJson) {
       const char* tabName = tabJson.key().c_str();
-      tabs.push_back(new Website::WebsiteTab(tabName,
-                                              tabJson.value().as<JsonArrayConst>()));
+      auto tab = getTabByName(tabName);
+      if (tab == nullptr) {
+        tabs.push_back(new Website::WebsiteTab(tabName,
+                                                tabJson.value().as<JsonArrayConst>()));
+      } else {
+        tab->onUpdate(tabJson.value().as<JsonArrayConst>());
+      }
     }
   }
 
@@ -1337,6 +1416,14 @@ namespace Website {
     }
     return false;
   }
+
+  Website::WebsiteTab* ApplicationContext::getTabByName(const char* tabName) {
+    for (const auto& tab : tabs) {
+      if (tab->getName().equals(tabName)) return tab;
+    }
+    return nullptr;
+  }
+
 
 
   namespace JsonReader {
@@ -1398,14 +1485,14 @@ namespace Website {
     static bool isValid = false;
     static bool isInitialized = false;
     static bool isElementsInitialized = false;
+
     isValid = validateJson(json);
     auto stateJsonWeakRef = ApplicationContext::getStateJsonWeakRef();
-    if( stateJsonWeakRef == nullptr) Serial.println("error!!!!!!!@!@!!@");
+    if(stateJsonWeakRef == nullptr) return InputJsonStatus::ALLOC_ERROR;
     if (isValid) {
       if (!isInitialized) {
         memorySize = json.length();
-        Serial.println((int)memorySize);
-        if (stateJsonWeakRef->allocate(memorySize)) {
+        if (stateJsonWeakRef->allocate(getBufferSize(memorySize))) {
           isInitialized = true;
         } else {
           stateJsonWeakRef->garbageCollect();
@@ -1437,6 +1524,7 @@ namespace Website {
         ApplicationContext::parseTabs(inputObject);
         stateJsonWeakRef->unlock();
       }
+
     }
     return InputJsonStatus::OK;
   }
@@ -1576,8 +1664,7 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
 #ifdef DEBUG_BUILD
   request->send(HttpCodes::OK, "text/plain", "Debug Build");
 #else
-
-  const String& title = card.getTitle();
+  const String& title = ApplicationContext::getTtile();
   if (!title.isEmpty() || title.equals("")){
     request->send(HttpCodes::OK, "text/plain", title);
   } else request->send(HttpCodes::NO_CONTENT);
@@ -1588,7 +1675,6 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
     using namespace Website;
     static String responseBody;   // static to avoid heap allocation in every request - beginResponse takes const reference
     auto stateJsonWeakRef = ApplicationContext::getStateJsonWeakRef();
-    auto data = ApplicationContext::onApplicationStateHttpRequest();
 #ifdef DEBUG_BUILD
     Log::info("Proccessing info request");
 #endif
@@ -1597,6 +1683,7 @@ void HTTPSetMappings(AsyncWebServer& webServer) {
       Log::info("mem ok, request resolved");
 #endif
       stateJsonWeakRef->lock();
+      auto data = ApplicationContext::onApplicationStateHttpRequest();
       responseBody.clear();
       serializeJson(data, responseBody);
       AsyncWebServerResponse* response = request->beginResponse(HttpCodes::OK, "application/json", responseBody);
@@ -1700,16 +1787,15 @@ void setup(){
   }
 
   WiFi.softAP("esp_ap", "123456789");
-  WiFi.begin("", "");
-  while(WiFi.status() != WL_CONNECTED) delay(100);
+  WiFi.begin("NET-MAR_619", "bielaki123424G");
+  while (WiFi.status() != WL_CONNECTED) delay(100);
   Serial.println(WiFi.localIP());
   WebsiteServer::ServerInit();
   uint32_t before = millis();
   using namespace WebsiteServer;
   using namespace WebsiteServer::JsonReader;
   InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
-  testWebsiteConfigStr.clear();
-  Log::info(errorHandler(status));
+ // Log::info(errorHandler(status));
   uint32_t after = millis();
   Serial.print("Execution time: ");
   Serial.println(after - before);
@@ -1718,6 +1804,19 @@ void setup(){
 
 
 void loop(){
+  uint32_t actual;
+  static uint32_t previous = 0;
+  uint32_t interval = 500;
+  actual = millis();
+  if (actual - previous > interval) {
+    uint32_t before = millis();
+    using namespace WebsiteServer;
+    using namespace WebsiteServer::JsonReader;
+    InputJsonStatus status = readWebsiteComponentsFromJson(testWebsiteConfigStr);
+    uint32_t after = millis();
+    previous = actual;
+  }
+
   WebsiteServer::JsonWriter::write();
 }
 
