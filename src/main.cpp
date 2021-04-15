@@ -1621,38 +1621,6 @@ void HTTPServeWebsite(AsyncWebServer& webServer) {
     request->send(SPIFFS, "/index.html");
   });
 
-  webServer.on("/index.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/index.css", "text/css");
-  });
-
-  webServer.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/index.js", "application/javascript");
-  });
-
-  webServer.on("/tab.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/tab.js", "application/javascript");
-  });
-
-  webServer.on("/component.css", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/component.css", "text/css");
-  });
-
-  webServer.on("/component.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/component.js", "application/javascript");
-#ifdef DEBUG_BUILD
-    Log::info("Component", Serial);
-    Log::memoryInfo(Serial);
-#endif
-  });
-
-  webServer.on("/Libs/pureknobMin.js", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/Libs/pureknobMin.js", "application/javascript");
-#ifdef DEBUG_BUILD
-    Log::info("Knob", Serial);
-    Log::memoryInfo(Serial);
-#endif
-  });
-
   webServer.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
       request->send(SPIFFS, "/favicon.ico", "image/ico");
   });
